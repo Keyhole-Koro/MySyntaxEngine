@@ -91,12 +91,22 @@ block       : 'L_BRACE' 'R_BRACE'
 stmtList    : stmtList stmt
             | stmt
 
-stmt        : block
+stmt        : matchedStmt
+            | unmatchedStmt
+
+matchedStmt : simpleStmt
+            | 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' matchedStmt 'ELSE' matchedStmt
+            | 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' matchedStmt
+            | forHeader matchedStmt
+
+unmatchedStmt: 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt
+            | 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' matchedStmt 'ELSE' unmatchedStmt
+            | 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' unmatchedStmt
+            | forHeader unmatchedStmt
+
+simpleStmt  : block
             | varDecl
-            | ifStmt
-            | whileStmt
             | doWhileStmt
-            | forStmt
             | returnStmt
             | breakStmt
             | continueStmt
@@ -105,21 +115,16 @@ stmt        : block
             | expr 'SEMICOLON'
             | 'SEMICOLON'
 
-ifStmt      : 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt
-            | 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt 'ELSE' stmt
-
-whileStmt   : 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt
-
 doWhileStmt : 'DO' stmt 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' 'SEMICOLON'
 
-forStmt     : 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
-            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES' stmt
+forHeader   : 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES'
 
 forInit     : type declarator
             | type declarator 'ASSIGN' expr
