@@ -177,7 +177,7 @@ exprList    : exprList 'COMMA' expr
 
 expr        : assignExpr
 
-assignExpr  : postfixExpr 'ASSIGN' assignExpr
+assignExpr  : unaryExpr 'ASSIGN' assignExpr
             | logicalOrExpr
 
 logicalOrExpr: logicalOrExpr 'OR' logicalAndExpr
