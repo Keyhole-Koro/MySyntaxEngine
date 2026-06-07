@@ -228,8 +228,16 @@ mulOp       : 'ASTARISK'
             | 'DIV'
             | 'MOD'
 
-unaryExpr   : unaryOp unaryExpr
+unaryExpr   : castExpr
+            | unaryOp unaryExpr
             | postfixExpr
+
+castExpr    : 'L_PARENTHESES' castType 'R_PARENTHESES' unaryExpr
+
+castType    : typePrefix primitiveType ptrList
+            | typePrefix primitiveType
+            | primitiveType ptrList
+            | primitiveType
 
 unaryOp     : 'NOT'
             | 'BITNOT'
