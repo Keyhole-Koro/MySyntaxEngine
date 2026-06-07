@@ -69,6 +69,7 @@ static int run_stdio_mode(const char *grammar_path) {
 
 int main(int argc, char **argv) {
     bool print_table = false;
+    bool print_conflicts = false;
     int arg_index = 1;
 
     if (argc > arg_index && strcmp(argv[arg_index], "--stdio") == 0) {
@@ -79,9 +80,18 @@ int main(int argc, char **argv) {
         return run_stdio_mode(grammar_path);
     }
 
-    if (argc > arg_index && strcmp(argv[arg_index], "--table") == 0) {
-        print_table = true;
-        arg_index++;
+    while (argc > arg_index) {
+        if (strcmp(argv[arg_index], "--table") == 0) {
+            print_table = true;
+            arg_index++;
+            continue;
+        }
+        if (strcmp(argv[arg_index], "--conflicts") == 0) {
+            print_conflicts = true;
+            arg_index++;
+            continue;
+        }
+        break;
     }
 
     const char *grammar_path = (argc > arg_index)
@@ -105,6 +115,10 @@ int main(int argc, char **argv) {
 
     if (print_table) {
         syntax_print_table(table);
+    }
+
+    if (print_conflicts) {
+        syntax_print_conflicts(table);
     }
 
     if (argc > arg_index) {

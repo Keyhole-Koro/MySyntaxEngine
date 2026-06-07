@@ -43,6 +43,7 @@ void syntax_result_free(SyntaxResult *result);
 size_t syntax_table_state_count(const SyntaxTable *table);
 int syntax_table_conflict_count(const SyntaxTable *table);
 void syntax_print_table(const SyntaxTable *table);
+void syntax_print_conflicts(const SyntaxTable *table);
 void syntax_free_table(SyntaxTable *table);
 void syntax_free_grammar(SyntaxGrammar *grammar);
 

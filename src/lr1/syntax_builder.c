@@ -195,6 +195,15 @@ static int add_state(SyntaxTable *table, ItemSet set) {
 static void set_action(SyntaxTable *table, int state, int terminal, ActionKind kind, int value) {
     ActionCell *cell = &table->actions[state][terminal];
     if (cell->kind != ACTION_NONE && (cell->kind != kind || cell->value != value)) {
+        if (table->conflict_count == table->conflict_cap) {
+            table->conflict_cap = table->conflict_cap ? table->conflict_cap * 2 : 32;
+            table->conflicts = lr1_xrealloc(table->conflicts, (size_t)table->conflict_cap * sizeof(ConflictInfo));
+        }
+        table->conflicts[table->conflict_count].state = state;
+        table->conflicts[table->conflict_count].terminal = terminal;
+        table->conflicts[table->conflict_count].existing = *cell;
+        table->conflicts[table->conflict_count].incoming.kind = kind;
+        table->conflicts[table->conflict_count].incoming.value = value;
         table->conflict_count++;
         return;
     }

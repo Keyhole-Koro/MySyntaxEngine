@@ -170,29 +170,61 @@ primitiveType: 'BOOL'
 exprList    : exprList 'COMMA' expr
             | expr
 
-expr        : expr binaryOp exprAtom
-            | exprAtom 'ASSIGN' expr
-            | unaryOp expr
-            | exprAtom
+expr        : assignExpr
 
-binaryOp    : 'OR'
-            | 'AND'
-            | 'BITOR'
-            | 'BITXOR'
-            | 'AMPERSAND'
-            | 'EQ'
+assignExpr  : postfixExpr 'ASSIGN' assignExpr
+            | logicalOrExpr
+
+logicalOrExpr: logicalOrExpr 'OR' logicalAndExpr
+            | logicalAndExpr
+
+logicalAndExpr: logicalAndExpr 'AND' bitOrExpr
+            | bitOrExpr
+
+bitOrExpr   : bitOrExpr 'BITOR' bitXorExpr
+            | bitXorExpr
+
+bitXorExpr  : bitXorExpr 'BITXOR' bitAndExpr
+            | bitAndExpr
+
+bitAndExpr  : bitAndExpr 'AMPERSAND' equalityExpr
+            | equalityExpr
+
+equalityExpr: equalityExpr equalityOp relationalExpr
+            | relationalExpr
+
+equalityOp  : 'EQ'
             | 'NEQ'
-            | 'LT'
+
+relationalExpr: relationalExpr relationalOp shiftExpr
+            | shiftExpr
+
+relationalOp: 'LT'
             | 'GT'
             | 'LTE'
             | 'GTE'
-            | 'LSH'
+
+shiftExpr   : shiftExpr shiftOp addExpr
+            | addExpr
+
+shiftOp     : 'LSH'
             | 'RSH'
-            | 'ADD'
+
+addExpr     : addExpr addOp mulExpr
+            | mulExpr
+
+addOp       : 'ADD'
             | 'SUB'
-            | 'ASTARISK'
+
+mulExpr     : mulExpr mulOp unaryExpr
+            | unaryExpr
+
+mulOp       : 'ASTARISK'
             | 'DIV'
             | 'MOD'
+
+unaryExpr   : unaryOp unaryExpr
+            | postfixExpr
 
 unaryOp     : 'NOT'
             | 'BITNOT'
@@ -204,14 +236,14 @@ unaryOp     : 'NOT'
             | 'DEC'
             | 'SIZEOF'
 
-exprAtom    : primary
-            | exprAtom 'INC'
-            | exprAtom 'DEC'
-            | exprAtom 'DOT' 'IDENTIFIER'
-            | exprAtom 'MEMBER' 'IDENTIFIER'
-            | exprAtom 'L_BRACKET' expr 'R_BRACKET'
-            | exprAtom 'L_PARENTHESES' 'R_PARENTHESES'
-            | exprAtom 'L_PARENTHESES' argList 'R_PARENTHESES'
+postfixExpr : primary
+            | postfixExpr 'INC'
+            | postfixExpr 'DEC'
+            | postfixExpr 'DOT' 'IDENTIFIER'
+            | postfixExpr 'MEMBER' 'IDENTIFIER'
+            | postfixExpr 'L_BRACKET' expr 'R_BRACKET'
+            | postfixExpr 'L_PARENTHESES' 'R_PARENTHESES'
+            | postfixExpr 'L_PARENTHESES' argList 'R_PARENTHESES'
 
 argList     : argList 'COMMA' expr
             | expr

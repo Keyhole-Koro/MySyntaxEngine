@@ -46,6 +46,13 @@ typedef struct {
     int value;
 } ActionCell;
 
+typedef struct {
+    int state;
+    int terminal;
+    ActionCell existing;
+    ActionCell incoming;
+} ConflictInfo;
+
 struct SyntaxGrammar {
     SymbolDef *symbols;
     int symbol_count;
@@ -66,6 +73,8 @@ struct SyntaxTable {
     ActionCell **actions;
     int **gotos;
     int conflict_count;
+    ConflictInfo *conflicts;
+    int conflict_cap;
 };
 
 char *lr1_xstrdup(const char *s);
