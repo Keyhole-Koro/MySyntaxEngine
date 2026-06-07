@@ -23,9 +23,17 @@ typedef struct {
 SyntaxGrammar *syntax_load_grammar(const char *path);
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar);
 
+int syntax_terminal_id(const SyntaxGrammar *grammar, const char *name);
+
 SyntaxResult syntax_parse_token_names(
     SyntaxTable *table,
     const char **token_names,
+    size_t token_count
+);
+
+SyntaxResult syntax_parse_token_ids(
+    SyntaxTable *table,
+    const int *token_ids,
     size_t token_count
 );
 

@@ -1,0 +1,226 @@
+program     : topList $
+            | $
+
+topList     : topList top
+            | top
+
+top         : packageDecl
+            | importDecl
+            | exportDecl
+            | externDecl
+            | typedefStmt
+            | structDecl
+            | enumDecl
+            | varDecl
+            | funcDecl
+
+packageDecl : 'PACKAGE' 'IDENTIFIER' 'SEMICOLON'
+
+importDecl  : 'IMPORT' 'IDENTIFIER' 'SEMICOLON'
+            | 'IMPORT' 'IDENTIFIER' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
+            | 'IMPORT' 'L_BRACE' identifierList 'R_BRACE' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
+
+exportDecl  : 'EXPORT' exportable
+
+exportable  : typedefStmt
+            | structDecl
+            | enumDecl
+            | varDecl
+            | funcDecl
+
+externDecl  : 'EXTERN' varDecl
+            | 'EXTERN' funcProto
+
+typedefStmt : 'TYPEDEF' type 'IDENTIFIER' 'SEMICOLON'
+            | 'TYPEDEF' structDecl
+
+structDecl  : 'STRUCT' 'IDENTIFIER' 'L_BRACE' 'R_BRACE' 'SEMICOLON'
+            | 'STRUCT' 'IDENTIFIER' 'L_BRACE' fieldList 'R_BRACE' 'SEMICOLON'
+            | 'STRUCT' 'L_BRACE' fieldList 'R_BRACE' 'IDENTIFIER' 'SEMICOLON'
+
+fieldList   : fieldList varDecl
+            | varDecl
+
+enumDecl    : 'ENUM' 'IDENTIFIER' 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER' 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
+
+enumItems   : enumItems 'COMMA' enumItem
+            | enumItem
+
+enumItem    : 'IDENTIFIER'
+            | 'IDENTIFIER' 'ASSIGN' 'NUMBER'
+
+funcDecl    : funcDef
+            | funcProto
+
+funcProto   : type 'IDENTIFIER' 'L_PARENTHESES' 'R_PARENTHESES' 'SEMICOLON'
+            | type 'IDENTIFIER' 'L_PARENTHESES' paramList 'R_PARENTHESES' 'SEMICOLON'
+
+funcDef     : type 'IDENTIFIER' 'L_PARENTHESES' 'R_PARENTHESES' block
+            | type 'IDENTIFIER' 'L_PARENTHESES' paramList 'R_PARENTHESES' block
+
+paramList   : paramList 'COMMA' param
+            | paramList 'COMMA' restParam
+            | param
+            | restParam
+
+param       : type declarator
+            | 'MUT' type declarator
+
+restParam   : 'REST' 'IDENTIFIER'
+
+varDecl     : type declarator 'SEMICOLON'
+            | type declarator 'ASSIGN' expr 'SEMICOLON'
+            | type declarator 'ASSIGN' initList 'SEMICOLON'
+            | 'MUT' type declarator 'SEMICOLON'
+            | 'MUT' type declarator 'ASSIGN' expr 'SEMICOLON'
+            | 'MUT' type declarator 'ASSIGN' initList 'SEMICOLON'
+
+declarator  : 'IDENTIFIER'
+            | declarator arraySuffix
+
+arraySuffix : 'L_BRACKET' 'R_BRACKET'
+            | 'L_BRACKET' 'NUMBER' 'R_BRACKET'
+
+initList    : 'L_BRACE' exprList 'R_BRACE'
+            | 'L_BRACE' exprList 'COMMA' 'R_BRACE'
+
+block       : 'L_BRACE' 'R_BRACE'
+            | 'L_BRACE' stmtList 'R_BRACE'
+
+stmtList    : stmtList stmt
+            | stmt
+
+stmt        : block
+            | varDecl
+            | ifStmt
+            | whileStmt
+            | doWhileStmt
+            | forStmt
+            | returnStmt
+            | breakStmt
+            | continueStmt
+            | yieldStmt
+            | uncheckedStmt
+            | expr 'SEMICOLON'
+            | 'SEMICOLON'
+
+ifStmt      : 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt
+            | 'IF' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt 'ELSE' stmt
+
+whileStmt   : 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' stmt
+
+doWhileStmt : 'DO' stmt 'WHILE' 'L_PARENTHESES' expr 'R_PARENTHESES' 'SEMICOLON'
+
+forStmt     : 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES' stmt
+            | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES' stmt
+
+forInit     : type declarator
+            | type declarator 'ASSIGN' expr
+            | 'MUT' type declarator
+            | 'MUT' type declarator 'ASSIGN' expr
+            | expr
+
+forExpr     : expr
+
+returnStmt  : 'RETURN' 'SEMICOLON'
+            | 'RETURN' expr 'SEMICOLON'
+
+breakStmt   : 'BREAK' 'SEMICOLON'
+
+continueStmt: 'CONTINUE' 'SEMICOLON'
+
+yieldStmt   : 'YIELD' expr 'SEMICOLON'
+
+uncheckedStmt: 'UNCHECKED' block
+
+type        : typePrefix baseType ptrList
+            | typePrefix baseType
+            | baseType ptrList
+            | baseType
+
+typePrefix  : 'CONST'
+            | 'REF'
+            | 'REF' 'MUT'
+            | 'CONST' 'REF'
+            | 'CONST' 'REF' 'MUT'
+
+ptrList     : ptrList 'ASTARISK'
+            | 'ASTARISK'
+
+baseType    : primitiveType
+            | 'IDENTIFIER'
+
+primitiveType: 'BOOL'
+            | 'I32'
+            | 'U32'
+            | 'CHAR'
+            | 'FLOAT'
+            | 'DOUBLE'
+            | 'VOID'
+            | 'LONG'
+            | 'SHORT'
+
+exprList    : exprList 'COMMA' expr
+            | expr
+
+expr        : expr binaryOp exprAtom
+            | exprAtom 'ASSIGN' expr
+            | unaryOp expr
+            | exprAtom
+
+binaryOp    : 'OR'
+            | 'AND'
+            | 'BITOR'
+            | 'BITXOR'
+            | 'AMPERSAND'
+            | 'EQ'
+            | 'NEQ'
+            | 'LT'
+            | 'GT'
+            | 'LTE'
+            | 'GTE'
+            | 'LSH'
+            | 'RSH'
+            | 'ADD'
+            | 'SUB'
+            | 'ASTARISK'
+            | 'DIV'
+            | 'MOD'
+
+unaryOp     : 'NOT'
+            | 'BITNOT'
+            | 'SUB'
+            | 'ADD'
+            | 'ASTARISK'
+            | 'AMPERSAND'
+            | 'INC'
+            | 'DEC'
+            | 'SIZEOF'
+
+exprAtom    : primary
+            | exprAtom 'INC'
+            | exprAtom 'DEC'
+            | exprAtom 'DOT' 'IDENTIFIER'
+            | exprAtom 'MEMBER' 'IDENTIFIER'
+            | exprAtom 'L_BRACKET' expr 'R_BRACKET'
+            | exprAtom 'L_PARENTHESES' 'R_PARENTHESES'
+            | exprAtom 'L_PARENTHESES' argList 'R_PARENTHESES'
+
+argList     : argList 'COMMA' expr
+            | expr
+
+primary     : 'IDENTIFIER'
+            | 'NUMBER'
+            | 'STRING_LITERAL'
+            | 'CHAR_LITERAL'
+            | 'L_PARENTHESES' expr 'R_PARENTHESES'
+
+identifierList: identifierList 'COMMA' 'IDENTIFIER'
+            | 'IDENTIFIER'

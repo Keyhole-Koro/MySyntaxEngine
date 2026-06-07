@@ -532,6 +532,10 @@ static int find_terminal(const SyntaxGrammar *grammar, const char *name) {
     return find_symbol(grammar, name, SYMBOL_TERMINAL);
 }
 
+int syntax_terminal_id(const SyntaxGrammar *grammar, const char *name) {
+    return find_terminal(grammar, name);
+}
+
 static void fill_expected(const SyntaxTable *table, SyntaxResult *result, int state) {
     const SyntaxGrammar *grammar = table->grammar;
     result->state = state;
@@ -548,6 +552,32 @@ SyntaxResult syntax_parse_token_names(
     const char **token_names,
     size_t token_count
 ) {
+    const SyntaxGrammar *grammar = table->grammar;
+    int *token_ids = xcalloc(token_count ? token_count : 1, sizeof(int));
+
+    for (size_t i = 0; i < token_count; i++) {
+        token_ids[i] = find_terminal(grammar, token_names[i]);
+        if (token_ids[i] < 0) {
+            SyntaxResult result = {0};
+            result.status = SYNTAX_ERROR;
+            result.token_index = i;
+            result.state = 0;
+            fill_expected(table, &result, 0);
+            free(token_ids);
+            return result;
+        }
+    }
+
+    SyntaxResult result = syntax_parse_token_ids(table, token_ids, token_count);
+    free(token_ids);
+    return result;
+}
+
+SyntaxResult syntax_parse_token_ids(
+    SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count
+) {
     SyntaxResult result = {0};
     result.status = SYNTAX_ERROR;
     const SyntaxGrammar *grammar = table->grammar;
@@ -562,7 +592,7 @@ SyntaxResult syntax_parse_token_names(
         int state = stack[stack_len - 1];
         int lookahead = grammar->eof_symbol;
         if (index < token_count) {
-            lookahead = find_terminal(grammar, token_names[index]);
+            lookahead = token_ids[index];
             if (lookahead < 0) {
                 result.status = SYNTAX_ERROR;
                 result.token_index = index;
