@@ -22,6 +22,8 @@ typedef struct {
 
 SyntaxGrammar *syntax_load_grammar(const char *path);
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar);
+SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path);
+int syntax_save_lr1_table(const SyntaxTable *table, const char *path);
 
 int syntax_terminal_id(const SyntaxGrammar *grammar, const char *name);
 
