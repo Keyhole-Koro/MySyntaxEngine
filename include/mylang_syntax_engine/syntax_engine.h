@@ -62,6 +62,34 @@ SyntaxResult syntax_parse_token_ids_roles(
     int *out_roles
 );
 
+/* Kind of a top-level declaration symbol (for documentSymbol / outlines). */
+typedef enum {
+    SYNTAX_SYM_FUNCTION,
+    SYNTAX_SYM_STRUCT,
+    SYNTAX_SYM_ENUM,
+    SYNTAX_SYM_TYPE,
+    SYNTAX_SYM_VARIABLE
+} SyntaxSymbolKind;
+
+typedef struct {
+    int token_index;   /* input token of the declared name */
+    int kind;          /* SyntaxSymbolKind */
+} SyntaxSymbol;
+
+/* Full analysis: fills out_roles (see above) and, if out_symbols is non-NULL,
+   collects up to symbol_cap top-level declaration symbols (functions, structs,
+   enums, typedefs, globals) into it, writing the count to *out_symbol_count.
+   Either output buffer may be NULL to skip it. */
+SyntaxResult syntax_parse_token_ids_ex(
+    SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count,
+    int *out_roles,
+    SyntaxSymbol *out_symbols,
+    size_t symbol_cap,
+    size_t *out_symbol_count
+);
+
 void syntax_result_free(SyntaxResult *result);
 size_t syntax_table_state_count(const SyntaxTable *table);
 int syntax_table_conflict_count(const SyntaxTable *table);

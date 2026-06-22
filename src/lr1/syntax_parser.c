@@ -65,12 +65,23 @@ static int role_for_lhs(const char *name) {
     return SYNTAX_ROLE_NONE;
 }
 
+/* Outline-symbol kind a production declares, or -1 if it declares none. */
+static int symbol_kind_for_lhs(const char *name) {
+    if (strcmp(name, "funcDef") == 0 || strcmp(name, "funcProto") == 0)
+        return SYNTAX_SYM_FUNCTION;
+    if (strcmp(name, "structDecl") == 0) return SYNTAX_SYM_STRUCT;
+    if (strcmp(name, "enumDecl") == 0) return SYNTAX_SYM_ENUM;
+    if (strcmp(name, "typedefStmt") == 0) return SYNTAX_SYM_TYPE;
+    if (strcmp(name, "varDecl") == 0) return SYNTAX_SYM_VARIABLE;
+    return -1;
+}
+
 SyntaxResult syntax_parse_token_ids(
     SyntaxTable *table,
     const int *token_ids,
     size_t token_count
 ) {
-    return syntax_parse_token_ids_roles(table, token_ids, token_count, NULL);
+    return syntax_parse_token_ids_ex(table, token_ids, token_count, NULL, NULL, 0, NULL);
 }
 
 SyntaxResult syntax_parse_token_ids_roles(
@@ -79,9 +90,25 @@ SyntaxResult syntax_parse_token_ids_roles(
     size_t token_count,
     int *out_roles
 ) {
+    return syntax_parse_token_ids_ex(table, token_ids, token_count, out_roles, NULL, 0, NULL);
+}
+
+SyntaxResult syntax_parse_token_ids_ex(
+    SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count,
+    int *out_roles,
+    SyntaxSymbol *out_symbols,
+    size_t symbol_cap,
+    size_t *out_symbol_count
+) {
     SyntaxResult result = {0};
     result.status = SYNTAX_ERROR;
     const SyntaxGrammar *grammar = table->grammar;
+    if (out_symbol_count) *out_symbol_count = 0;
+    /* Brace nesting: a declaration is top-level (outline symbol) iff it reduces
+       at depth 0, which separates globals from locals and struct fields. */
+    int brace_depth = 0;
 
     int stack_cap = 128;
     int stack_len = 1;
@@ -121,6 +148,9 @@ SyntaxResult syntax_parse_token_ids_roles(
         }
 
         if (action.kind == ACTION_SHIFT) {
+            const char *tname = grammar->symbols[lookahead].name;
+            if (strcmp(tname, "L_BRACE") == 0) brace_depth++;
+            else if (strcmp(tname, "R_BRACE") == 0 && brace_depth > 0) brace_depth--;
             if (stack_len == stack_cap) {
                 stack_cap *= 2;
                 stack = lr1_xrealloc(stack, (size_t)stack_cap * sizeof(int));
@@ -169,6 +199,29 @@ SyntaxResult syntax_parse_token_ids_roles(
                     if (callee >= 0 && (size_t)callee < token_count && lparen == callee + 1 &&
                         strcmp(grammar->symbols[token_ids[callee]].name, "IDENTIFIER") == 0)
                         out_roles[callee] = SYNTAX_ROLE_FUNCTION;
+                }
+            }
+
+            /* Top-level declaration symbols for the outline. Only at brace
+               depth 0, which excludes locals, struct fields and call sites. */
+            if (out_symbols && out_symbol_count && *out_symbol_count < symbol_cap &&
+                brace_depth == 0) {
+                const char *lhs_name = grammar->symbols[production->lhs].name;
+                int skind = symbol_kind_for_lhs(lhs_name);
+                if (skind >= 0) {
+                    /* The declared name is a direct IDENTIFIER, except for
+                       varDecl whose name is the declarator's leftmost token. */
+                    const char *want = (skind == SYNTAX_SYM_VARIABLE) ? "declarator" : "IDENTIFIER";
+                    for (int j = 0; j < production->rhs_len; j++) {
+                        if (strcmp(grammar->symbols[production->rhs[j]].name, want) != 0)
+                            continue;
+                        int tok = pos_stack[rhs_base + j];
+                        if (tok < 0 || (size_t)tok >= token_count) break;
+                        out_symbols[*out_symbol_count].token_index = tok;
+                        out_symbols[*out_symbol_count].kind = skind;
+                        (*out_symbol_count)++;
+                        break;
+                    }
                 }
             }
 
