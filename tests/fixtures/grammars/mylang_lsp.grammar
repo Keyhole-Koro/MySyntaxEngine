@@ -1,3 +1,5 @@
+%scope L_BRACE R_BRACE
+
 program     : topList $
             | $
 
@@ -14,10 +16,10 @@ top         : packageDecl
             | varDecl
             | funcDecl
 
-packageDecl : 'PACKAGE' 'IDENTIFIER' 'SEMICOLON'
+packageDecl : 'PACKAGE' 'IDENTIFIER'@namespace 'SEMICOLON'
 
-importDecl  : 'IMPORT' 'IDENTIFIER' 'SEMICOLON'
-            | 'IMPORT' 'IDENTIFIER' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
+importDecl  : 'IMPORT' 'IDENTIFIER'@namespace 'SEMICOLON'
+            | 'IMPORT' 'IDENTIFIER'@namespace 'FROM' 'STRING_LITERAL' 'SEMICOLON'
             | 'IMPORT' 'L_BRACE' identifierList 'R_BRACE' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
 
 exportDecl  : 'EXPORT' exportable
@@ -31,18 +33,18 @@ exportable  : typedefStmt
 externDecl  : 'EXTERN' varDecl
             | 'EXTERN' funcProto
 
-typedefStmt : 'TYPEDEF' type 'IDENTIFIER' 'SEMICOLON'
+typedefStmt : 'TYPEDEF' type 'IDENTIFIER'@type@decl(type) 'SEMICOLON'
             | 'TYPEDEF' structDecl
 
-structDecl  : 'STRUCT' 'IDENTIFIER' 'L_BRACE' 'R_BRACE' 'SEMICOLON'
-            | 'STRUCT' 'IDENTIFIER' 'L_BRACE' fieldList 'R_BRACE' 'SEMICOLON'
-            | 'STRUCT' 'L_BRACE' fieldList 'R_BRACE' 'IDENTIFIER' 'SEMICOLON'
+structDecl  : 'STRUCT' 'IDENTIFIER'@struct@decl(struct) 'L_BRACE' 'R_BRACE' 'SEMICOLON'
+            | 'STRUCT' 'IDENTIFIER'@struct@decl(struct) 'L_BRACE' fieldList 'R_BRACE' 'SEMICOLON'
+            | 'STRUCT' 'L_BRACE' fieldList 'R_BRACE' 'IDENTIFIER'@struct@decl(struct) 'SEMICOLON'
 
 fieldList   : fieldList varDecl
             | varDecl
 
-enumDecl    : 'ENUM' 'IDENTIFIER' 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
-            | 'ENUM' 'IDENTIFIER' 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
+enumDecl    : 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
 
 enumItems   : enumItems 'COMMA' enumItem
             | enumItem
@@ -53,28 +55,28 @@ enumItem    : 'IDENTIFIER'
 funcDecl    : funcDef
             | funcProto
 
-funcProto   : type 'IDENTIFIER' 'L_PARENTHESES' 'R_PARENTHESES' 'SEMICOLON'
-            | type 'IDENTIFIER' 'L_PARENTHESES' paramList 'R_PARENTHESES' 'SEMICOLON'
+funcProto   : type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' 'R_PARENTHESES' 'SEMICOLON'
+            | type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' paramList 'R_PARENTHESES' 'SEMICOLON'
 
-funcDef     : type 'IDENTIFIER' 'L_PARENTHESES' 'R_PARENTHESES' block
-            | type 'IDENTIFIER' 'L_PARENTHESES' paramList 'R_PARENTHESES' block
+funcDef     : type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' 'R_PARENTHESES' block
+            | type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' paramList 'R_PARENTHESES' block
 
 paramList   : paramList 'COMMA' param
             | paramList 'COMMA' restParam
             | param
             | restParam
 
-param       : type declarator
-            | 'MUT' type declarator
+param       : type declarator@parameter
+            | 'MUT' type declarator@parameter
 
 restParam   : 'REST' 'IDENTIFIER'
 
-varDecl     : type declarator 'SEMICOLON'
-            | type declarator 'ASSIGN' expr 'SEMICOLON'
-            | type declarator 'ASSIGN' initList 'SEMICOLON'
-            | 'MUT' type declarator 'SEMICOLON'
-            | 'MUT' type declarator 'ASSIGN' expr 'SEMICOLON'
-            | 'MUT' type declarator 'ASSIGN' initList 'SEMICOLON'
+varDecl     : type declarator@decl(variable) 'SEMICOLON'
+            | type declarator@decl(variable) 'ASSIGN' expr 'SEMICOLON'
+            | type declarator@decl(variable) 'ASSIGN' initList 'SEMICOLON'
+            | 'MUT' type declarator@decl(variable) 'SEMICOLON'
+            | 'MUT' type declarator@decl(variable) 'ASSIGN' expr 'SEMICOLON'
+            | 'MUT' type declarator@decl(variable) 'ASSIGN' initList 'SEMICOLON'
 
 declarator  : 'IDENTIFIER'
             | declarator arraySuffix
@@ -160,7 +162,7 @@ ptrList     : ptrList 'ASTARISK'
             | 'ASTARISK'
 
 baseType    : primitiveType
-            | 'IDENTIFIER'
+            | 'IDENTIFIER'@type
 
 primitiveType: 'BOOL'
             | 'I32'
@@ -252,11 +254,11 @@ unaryOp     : 'NOT'
 postfixExpr : primary
             | postfixExpr 'INC'
             | postfixExpr 'DEC'
-            | postfixExpr 'DOT' 'IDENTIFIER'
-            | postfixExpr 'MEMBER' 'IDENTIFIER'
+            | postfixExpr 'DOT' 'IDENTIFIER'@property
+            | postfixExpr 'MEMBER' 'IDENTIFIER'@property
             | postfixExpr 'L_BRACKET' expr 'R_BRACKET'
-            | postfixExpr 'L_PARENTHESES' 'R_PARENTHESES'
-            | postfixExpr 'L_PARENTHESES' argList 'R_PARENTHESES'
+            | postfixExpr@function:single 'L_PARENTHESES' 'R_PARENTHESES'
+            | postfixExpr@function:single 'L_PARENTHESES' argList 'R_PARENTHESES'
 
 argList     : argList 'COMMA' expr
             | expr

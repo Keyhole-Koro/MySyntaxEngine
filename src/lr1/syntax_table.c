@@ -130,7 +130,12 @@ void syntax_free_grammar(SyntaxGrammar *grammar) {
     if (!grammar) return;
     for (int i = 0; i < grammar->symbol_count; i++) free(grammar->symbols[i].name);
     free(grammar->symbols);
-    for (int i = 0; i < grammar->production_count; i++) free(grammar->productions[i].rhs);
+    for (int i = 0; i < grammar->production_count; i++) {
+        free(grammar->productions[i].rhs);
+        free(grammar->productions[i].annot);
+    }
     free(grammar->productions);
+    for (int i = 0; i < grammar->label_count; i++) free(grammar->labels[i]);
+    free(grammar->labels);
     free(grammar);
 }

@@ -20,18 +20,10 @@ typedef struct {
     size_t expected_count;
 } SyntaxResult;
 
-/* Semantic role assigned to an input token from its grammar context during the
-   LR1 parse. Used by the language server to classify identifiers (function vs
-   type vs property...) without source-text heuristics. */
-typedef enum {
-    SYNTAX_ROLE_NONE = 0,
-    SYNTAX_ROLE_FUNCTION,
-    SYNTAX_ROLE_TYPE,
-    SYNTAX_ROLE_STRUCT,
-    SYNTAX_ROLE_NAMESPACE,
-    SYNTAX_ROLE_PARAMETER,
-    SYNTAX_ROLE_PROPERTY
-} SyntaxRole;
+/* Token roles and symbol kinds are grammar-defined labels, not a fixed enum:
+   the grammar's @role / @decl(kind) annotations declare arbitrary strings that
+   the engine carries through as interned label ids (0 = none). Resolve an id to
+   its string with syntax_label_name(). This keeps the engine language-agnostic. */
 
 SyntaxGrammar *syntax_load_grammar(const char *path);
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar);
@@ -54,7 +46,8 @@ SyntaxResult syntax_parse_token_ids(
 
 /* Same as syntax_parse_token_ids, but if out_roles is non-NULL it must point to
    a token_count-sized buffer (caller-zeroed); each entry is filled with the
-   SyntaxRole inferred for that input token (SYNTAX_ROLE_NONE if unclassified). */
+   grammar-defined role label id for that token (0 if unclassified; resolve with
+   syntax_label_name). */
 SyntaxResult syntax_parse_token_ids_roles(
     SyntaxTable *table,
     const int *token_ids,
@@ -62,19 +55,14 @@ SyntaxResult syntax_parse_token_ids_roles(
     int *out_roles
 );
 
-/* Kind of a top-level declaration symbol (for documentSymbol / outlines). */
-typedef enum {
-    SYNTAX_SYM_FUNCTION,
-    SYNTAX_SYM_STRUCT,
-    SYNTAX_SYM_ENUM,
-    SYNTAX_SYM_TYPE,
-    SYNTAX_SYM_VARIABLE
-} SyntaxSymbolKind;
-
 typedef struct {
     int token_index;   /* input token of the declared name */
-    int kind;          /* SyntaxSymbolKind */
+    int kind;          /* grammar-defined label id (resolve via syntax_label_name) */
 } SyntaxSymbol;
+
+/* Resolve a label id (from out_roles entries or SyntaxSymbol.kind) to its
+   grammar-declared string, or NULL for 0/none. */
+const char *syntax_label_name(const SyntaxTable *table, int label_id);
 
 /* Full analysis: fills out_roles (see above) and, if out_symbols is non-NULL,
    collects up to symbol_cap top-level declaration symbols (functions, structs,

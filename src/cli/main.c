@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "mylang_syntax_engine/syntax_engine.h"
+#include "syntax_engine/syntax_engine.h"
 
 static const char *status_name(SyntaxStatus status) {
     switch (status) {

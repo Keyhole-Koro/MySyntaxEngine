@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra
 
 SRC = $(shell find src -name '*.c' | sort)
-INCLUDE = -Iinclude
+INCLUDE = -Iinc
 
 BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj

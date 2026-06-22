@@ -10,7 +10,7 @@ incomplete input.
 
 ```text
 .
-├── include/mylang_syntax_engine/
+├── inc/syntax_engine/
 │   └── syntax_engine.h          # Public API
 ├── src/
 │   ├── cli/main.c               # Debug/demo CLI
