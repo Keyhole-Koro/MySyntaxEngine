@@ -20,6 +20,19 @@ typedef struct {
     size_t expected_count;
 } SyntaxResult;
 
+/* Semantic role assigned to an input token from its grammar context during the
+   LR1 parse. Used by the language server to classify identifiers (function vs
+   type vs property...) without source-text heuristics. */
+typedef enum {
+    SYNTAX_ROLE_NONE = 0,
+    SYNTAX_ROLE_FUNCTION,
+    SYNTAX_ROLE_TYPE,
+    SYNTAX_ROLE_STRUCT,
+    SYNTAX_ROLE_NAMESPACE,
+    SYNTAX_ROLE_PARAMETER,
+    SYNTAX_ROLE_PROPERTY
+} SyntaxRole;
+
 SyntaxGrammar *syntax_load_grammar(const char *path);
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar);
 SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path);
@@ -37,6 +50,16 @@ SyntaxResult syntax_parse_token_ids(
     SyntaxTable *table,
     const int *token_ids,
     size_t token_count
+);
+
+/* Same as syntax_parse_token_ids, but if out_roles is non-NULL it must point to
+   a token_count-sized buffer (caller-zeroed); each entry is filled with the
+   SyntaxRole inferred for that input token (SYNTAX_ROLE_NONE if unclassified). */
+SyntaxResult syntax_parse_token_ids_roles(
+    SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count,
+    int *out_roles
 );
 
 void syntax_result_free(SyntaxResult *result);

@@ -48,10 +48,36 @@ SyntaxResult syntax_parse_token_names(
     return result;
 }
 
+/* Role assigned to the direct IDENTIFIER terminals of a production, keyed by the
+   production's left-hand-side nonterminal name. Returns SYNTAX_ROLE_NONE for
+   productions whose identifiers should keep their default classification. */
+static int role_for_lhs(const char *name) {
+    if (strcmp(name, "funcDef") == 0 || strcmp(name, "funcProto") == 0)
+        return SYNTAX_ROLE_FUNCTION;
+    if (strcmp(name, "packageDecl") == 0 || strcmp(name, "importDecl") == 0)
+        return SYNTAX_ROLE_NAMESPACE;
+    if (strcmp(name, "structDecl") == 0 || strcmp(name, "enumDecl") == 0)
+        return SYNTAX_ROLE_STRUCT;
+    if (strcmp(name, "typedefStmt") == 0 || strcmp(name, "baseType") == 0)
+        return SYNTAX_ROLE_TYPE;
+    if (strcmp(name, "postfixExpr") == 0)
+        return SYNTAX_ROLE_PROPERTY;  // only the DOT/MEMBER forms have a direct IDENTIFIER
+    return SYNTAX_ROLE_NONE;
+}
+
 SyntaxResult syntax_parse_token_ids(
     SyntaxTable *table,
     const int *token_ids,
     size_t token_count
+) {
+    return syntax_parse_token_ids_roles(table, token_ids, token_count, NULL);
+}
+
+SyntaxResult syntax_parse_token_ids_roles(
+    SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count,
+    int *out_roles
 ) {
     SyntaxResult result = {0};
     result.status = SYNTAX_ERROR;
@@ -60,7 +86,10 @@ SyntaxResult syntax_parse_token_ids(
     int stack_cap = 128;
     int stack_len = 1;
     int *stack = lr1_xcalloc((size_t)stack_cap, sizeof(int));
+    /* Parallel stack: leftmost input-token index each stack symbol derives. */
+    int *pos_stack = lr1_xcalloc((size_t)stack_cap, sizeof(int));
     stack[0] = 0;
+    pos_stack[0] = -1;
 
     size_t index = 0;
     for (;;) {
@@ -95,7 +124,9 @@ SyntaxResult syntax_parse_token_ids(
             if (stack_len == stack_cap) {
                 stack_cap *= 2;
                 stack = lr1_xrealloc(stack, (size_t)stack_cap * sizeof(int));
+                pos_stack = lr1_xrealloc(pos_stack, (size_t)stack_cap * sizeof(int));
             }
+            pos_stack[stack_len] = (int)index;
             stack[stack_len++] = action.value;
             index++;
             continue;
@@ -110,6 +141,38 @@ SyntaxResult syntax_parse_token_ids(
                 break;
             }
 
+            int rhs_base = stack_len - production->rhs_len;  // slot of first RHS symbol
+
+            /* Attribute grammar-derived roles to the production's direct
+               IDENTIFIER terminals (and the param declarator). */
+            if (out_roles) {
+                const char *lhs_name = grammar->symbols[production->lhs].name;
+                int role = role_for_lhs(lhs_name);
+                bool is_param = strcmp(lhs_name, "param") == 0;
+                if (role != SYNTAX_ROLE_NONE || is_param) {
+                    for (int j = 0; j < production->rhs_len; j++) {
+                        const char *sym = grammar->symbols[production->rhs[j]].name;
+                        int tok = pos_stack[rhs_base + j];
+                        if (tok < 0 || (size_t)tok >= token_count) continue;
+                        if (role != SYNTAX_ROLE_NONE && strcmp(sym, "IDENTIFIER") == 0)
+                            out_roles[tok] = role;
+                        else if (is_param && strcmp(sym, "declarator") == 0)
+                            out_roles[tok] = SYNTAX_ROLE_PARAMETER;
+                    }
+                }
+                /* Simple call: callee is a single-token identifier directly
+                   followed by '(' (so 'a.b()' / 'arr[i]()' do not match). */
+                if (strcmp(lhs_name, "postfixExpr") == 0 && production->rhs_len >= 2 &&
+                    strcmp(grammar->symbols[production->rhs[1]].name, "L_PARENTHESES") == 0) {
+                    int callee = pos_stack[rhs_base];
+                    int lparen = pos_stack[rhs_base + 1];
+                    if (callee >= 0 && (size_t)callee < token_count && lparen == callee + 1 &&
+                        strcmp(grammar->symbols[token_ids[callee]].name, "IDENTIFIER") == 0)
+                        out_roles[callee] = SYNTAX_ROLE_FUNCTION;
+                }
+            }
+
+            int lhs_pos = (production->rhs_len > 0) ? pos_stack[rhs_base] : (int)index;
             stack_len -= production->rhs_len;
             int goto_from = stack[stack_len - 1];
             int goto_state = table->gotos[goto_from][production->lhs];
@@ -123,13 +186,16 @@ SyntaxResult syntax_parse_token_ids(
             if (stack_len == stack_cap) {
                 stack_cap *= 2;
                 stack = lr1_xrealloc(stack, (size_t)stack_cap * sizeof(int));
+                pos_stack = lr1_xrealloc(pos_stack, (size_t)stack_cap * sizeof(int));
             }
+            pos_stack[stack_len] = lhs_pos;
             stack[stack_len++] = goto_state;
             continue;
         }
     }
 
     free(stack);
+    free(pos_stack);
     return result;
 }
 
