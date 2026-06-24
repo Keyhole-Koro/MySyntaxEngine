@@ -165,6 +165,8 @@ baseType    : primitiveType
             | 'IDENTIFIER'@type
 
 primitiveType: 'BOOL'
+            | 'U8'
+            | 'U16'
             | 'I32'
             | 'U32'
             | 'CHAR'
