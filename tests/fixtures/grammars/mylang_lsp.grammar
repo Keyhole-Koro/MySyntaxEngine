@@ -69,14 +69,14 @@ paramList   : paramList 'COMMA' param
 param       : type declarator@parameter
             | 'MUT' type declarator@parameter
 
-restParam   : 'REST' 'IDENTIFIER'
+restParam   : 'REST' 'IDENTIFIER'@parameter
 
-varDecl     : type declarator@decl(variable) 'SEMICOLON'
-            | type declarator@decl(variable) 'ASSIGN' expr 'SEMICOLON'
-            | type declarator@decl(variable) 'ASSIGN' initList 'SEMICOLON'
-            | 'MUT' type declarator@decl(variable) 'SEMICOLON'
-            | 'MUT' type declarator@decl(variable) 'ASSIGN' expr 'SEMICOLON'
-            | 'MUT' type declarator@decl(variable) 'ASSIGN' initList 'SEMICOLON'
+varDecl     : type declarator@variable@decl(variable) 'SEMICOLON'
+            | type declarator@variable@decl(variable) 'ASSIGN' expr 'SEMICOLON'
+            | type declarator@variable@decl(variable) 'ASSIGN' initList 'SEMICOLON'
+            | 'MUT' type declarator@variable@decl(variable) 'SEMICOLON'
+            | 'MUT' type declarator@variable@decl(variable) 'ASSIGN' expr 'SEMICOLON'
+            | 'MUT' type declarator@variable@decl(variable) 'ASSIGN' initList 'SEMICOLON'
 
 declarator  : 'IDENTIFIER'
             | declarator arraySuffix
@@ -128,10 +128,10 @@ forHeader   : 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' forE
             | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES'
             | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES'
 
-forInit     : type declarator
-            | type declarator 'ASSIGN' expr
-            | 'MUT' type declarator
-            | 'MUT' type declarator 'ASSIGN' expr
+forInit     : type declarator@variable
+            | type declarator@variable 'ASSIGN' expr
+            | 'MUT' type declarator@variable
+            | 'MUT' type declarator@variable 'ASSIGN' expr
             | expr
 
 forExpr     : expr
@@ -265,7 +265,7 @@ postfixExpr : primary
 argList     : argList 'COMMA' expr
             | expr
 
-primary     : 'IDENTIFIER'
+primary     : 'IDENTIFIER'@variable
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
