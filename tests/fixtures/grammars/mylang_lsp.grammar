@@ -269,7 +269,11 @@ primary     : 'IDENTIFIER'@variable
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
+            | funLiteral
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
+
+funLiteral  : 'L_PARENTHESES' 'R_PARENTHESES' 'FAT_ARROW' block
+            | 'L_PARENTHESES' paramList 'R_PARENTHESES' 'FAT_ARROW' block
 
 identifierList: identifierList 'COMMA' 'IDENTIFIER'
             | 'IDENTIFIER'
