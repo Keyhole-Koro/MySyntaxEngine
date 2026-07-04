@@ -8,6 +8,7 @@ topList     : topList top
 
 top         : packageDecl
             | importDecl
+            | testDecl
             | exportDecl
             | externDecl
             | typedefStmt
@@ -21,6 +22,18 @@ packageDecl : 'PACKAGE' 'IDENTIFIER'@namespace 'SEMICOLON'
 importDecl  : 'IMPORT' 'IDENTIFIER'@namespace 'SEMICOLON'
             | 'IMPORT' 'IDENTIFIER'@namespace 'FROM' 'STRING_LITERAL' 'SEMICOLON'
             | 'IMPORT' 'L_BRACE' identifierList 'R_BRACE' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
+
+testDecl    : 'IDENTIFIER'@function 'L_PARENTHESES' 'STRING_LITERAL' 'COMMA' testOptions 'COMMA' testBody 'R_PARENTHESES' 'SEMICOLON'
+
+testOptions : 'L_BRACE' 'R_BRACE'
+            | 'L_BRACE' testOptionList 'R_BRACE'
+
+testOptionList: testOptionList testOption
+            | testOption
+
+testOption  : 'IDENTIFIER'@property 'COLON' expr 'SEMICOLON'
+
+testBody    : 'L_PARENTHESES' 'R_PARENTHESES' 'FAT_ARROW' block
 
 exportDecl  : 'EXPORT' exportable
 
