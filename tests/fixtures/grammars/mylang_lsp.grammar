@@ -62,8 +62,8 @@ enumDecl    : 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE
 enumItems   : enumItems 'COMMA' enumItem
             | enumItem
 
-enumItem    : 'IDENTIFIER'
-            | 'IDENTIFIER' 'ASSIGN' 'NUMBER'
+enumItem    : 'IDENTIFIER'@enumMember@decl(enumMember)
+            | 'IDENTIFIER'@enumMember@decl(enumMember) 'ASSIGN' 'NUMBER'
 
 funcDecl    : funcDef
             | funcProto
@@ -286,7 +286,18 @@ primary     : 'IDENTIFIER'@variable
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
 
 funLiteral  : 'L_PARENTHESES' 'R_PARENTHESES' 'FAT_ARROW' block
-            | 'L_PARENTHESES' paramList 'R_PARENTHESES' 'FAT_ARROW' block
+            | 'L_PARENTHESES' funParamList 'R_PARENTHESES' 'FAT_ARROW' block
+
+funParamList: funParamList 'COMMA' funParam
+            | funParam
+
+funParam    : funType declarator@parameter
+            | 'MUT' funType declarator@parameter
+
+funType     : typePrefix primitiveType ptrList
+            | typePrefix primitiveType
+            | primitiveType ptrList
+            | primitiveType
 
 identifierList: identifierList 'COMMA' 'IDENTIFIER'
             | 'IDENTIFIER'
