@@ -58,6 +58,8 @@ fieldList   : fieldList varDecl
 
 enumDecl    : 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
             | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE'
+            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE'
 
 enumItems   : enumItems 'COMMA' enumItem
             | enumItem
