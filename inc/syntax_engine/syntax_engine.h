@@ -26,6 +26,7 @@ typedef struct {
    its string with syntax_label_name(). This keeps the engine language-agnostic. */
 
 SyntaxGrammar *syntax_load_grammar(const char *path);
+SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count);
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar);
 SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path);
 int syntax_save_lr1_table(const SyntaxTable *table, const char *path);

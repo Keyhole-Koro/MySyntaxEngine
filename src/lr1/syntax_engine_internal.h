@@ -42,6 +42,7 @@ typedef struct {
     LR1Item *items;
     int count;
     int cap;
+    unsigned int hash;
 } ItemSet;
 
 typedef enum {

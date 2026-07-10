@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdlib.h>
+static unsigned int hash_itemset(const ItemSet *set);
 
 static void add_first_symbol(const SyntaxGrammar *grammar, bool **first, int nonterminal, int terminal) {
     (void)grammar;
@@ -126,6 +127,7 @@ static void closure(const SyntaxGrammar *grammar, bool **first, ItemSet *set) {
             }
         }
     } while (changed);
+    set->hash = hash_itemset(set);
 }
 
 static ItemSet goto_set(const SyntaxGrammar *grammar, bool **first, const ItemSet *set, int symbol) {
@@ -142,6 +144,17 @@ static ItemSet goto_set(const SyntaxGrammar *grammar, bool **first, const ItemSe
     return next;
 }
 
+static unsigned int hash_itemset(const ItemSet *set) {
+    unsigned int h = 0;
+    for (int i = 0; i < set->count; i++) {
+        LR1Item item = set->items[i];
+        h ^= (unsigned int)item.production * 137;
+        h ^= (unsigned int)item.dot * 19;
+        h ^= (unsigned int)item.lookahead * 17;
+    }
+    return h;
+}
+
 static bool itemset_equals(const ItemSet *a, const ItemSet *b) {
     if (a->count != b->count) return false;
     for (int i = 0; i < a->count; i++) {
@@ -152,7 +165,7 @@ static bool itemset_equals(const ItemSet *a, const ItemSet *b) {
 
 static int find_state(const SyntaxTable *table, const ItemSet *set) {
     for (int i = 0; i < table->state_count; i++) {
-        if (itemset_equals(&table->states[i], set)) return i;
+        if (table->states[i].hash == set->hash && itemset_equals(&table->states[i], set)) return i;
     }
     return -1;
 }

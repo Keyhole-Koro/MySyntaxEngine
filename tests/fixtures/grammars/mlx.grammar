@@ -1,0 +1,20 @@
+%extend primary : mlxElement
+
+mlxElement : 'MLX_TAG_OPEN' 'IDENTIFIER'@struct mlxAttributes 'MLX_TAG_CLOSE' mlxChildren 'MLX_CLOSE_TAG_OPEN' 'IDENTIFIER'@struct 'MLX_TAG_CLOSE'
+           | 'MLX_TAG_OPEN' 'IDENTIFIER'@struct mlxAttributes 'MLX_TAG_SELF_CLOSE'
+           | 'MLX_TAG_OPEN' 'IDENTIFIER'@struct 'MLX_TAG_CLOSE' mlxChildren 'MLX_CLOSE_TAG_OPEN' 'IDENTIFIER'@struct 'MLX_TAG_CLOSE'
+           | 'MLX_TAG_OPEN' 'IDENTIFIER'@struct 'MLX_TAG_SELF_CLOSE'
+
+mlxAttributes : mlxAttributes mlxAttribute
+              | mlxAttribute
+
+mlxAttribute : 'IDENTIFIER'@property 'ASSIGN' 'STRING_LITERAL'
+             | 'IDENTIFIER'@property 'ASSIGN' 'L_BRACE' expr 'R_BRACE'
+             | 'IDENTIFIER'@property
+
+mlxChildren : mlxChildren mlxChild
+            | mlxChild
+
+mlxChild : 'MLX_TEXT'
+         | mlxElement
+         | 'L_BRACE' expr 'R_BRACE'

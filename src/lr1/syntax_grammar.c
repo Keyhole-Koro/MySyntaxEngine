@@ -163,35 +163,47 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
     return true;
 }
 
-SyntaxGrammar *syntax_load_grammar(const char *path) {
-    FILE *file = fopen(path, "r");
-    if (!file) {
-        fprintf(stderr, "failed to open grammar: %s\n", path);
-        return NULL;
-    }
-
+SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
     SyntaxGrammar *grammar = lr1_xcalloc(1, sizeof(SyntaxGrammar));
     grammar->start_symbol = -1;
     grammar->scope_open = -1;
     grammar->scope_close = -1;
     grammar->eof_symbol = add_symbol(grammar, "$", SYMBOL_TERMINAL);
 
-    char line[1024];
-    int current_lhs = -1;
+    for (int i = 0; i < count; i++) {
+        const char *path = paths[i];
+        FILE *file = fopen(path, "r");
+        if (!file) {
+            fprintf(stderr, "failed to open grammar: %s\n", path);
+            syntax_free_grammar(grammar);
+            return NULL;
+        }
 
-    while (fgets(line, sizeof(line), file)) {
+        char line[1024];
+        int current_lhs = -1;
+
+        while (fgets(line, sizeof(line), file)) {
         char *text = lr1_trim(line);
         if (*text == '\0') continue;
 
-        /* Directive: %scope <open-terminal> <close-terminal> */
+        /* Directive: %scope <open-terminal> <close-terminal> or %extend */
         if (text[0] == '%') {
-            char dir[64], open[64], close[64];
-            if (sscanf(text, "%%%63s %63s %63s", dir, open, close) == 3 &&
-                strcmp(dir, "scope") == 0) {
-                grammar->scope_open = add_symbol(grammar, open, SYMBOL_TERMINAL);
-                grammar->scope_close = add_symbol(grammar, close, SYMBOL_TERMINAL);
+            char dir[64], arg1[64], arg2[64];
+            if (sscanf(text, "%%%63s %63s %63s", dir, arg1, arg2) >= 2) {
+                if (strcmp(dir, "scope") == 0) {
+                    grammar->scope_open = add_symbol(grammar, arg1, SYMBOL_TERMINAL);
+                    grammar->scope_close = add_symbol(grammar, arg2, SYMBOL_TERMINAL);
+                    continue;
+                }
             }
-            continue;
+            if (strncmp(text, "%extend", 7) == 0) {
+                // transform "%extend Target = Rule" to "Target = Rule"
+                text += 7;
+                while (*text == ' ' || *text == '\t') text++;
+                // then fall through to normal parsing!
+            } else {
+                continue;
+            }
         }
 
         char *equals = strchr(text, '=');
@@ -241,9 +253,10 @@ SyntaxGrammar *syntax_load_grammar(const char *path) {
     }
 
     fclose(file);
+    } // end for loop over paths
 
     if (grammar->start_symbol < 0 || grammar->production_count == 0) {
-        fprintf(stderr, "grammar has no productions: %s\n", path);
+        fprintf(stderr, "grammar has no productions\n");
         syntax_free_grammar(grammar);
         return NULL;
     }
@@ -257,6 +270,11 @@ SyntaxGrammar *syntax_load_grammar(const char *path) {
     grammar->start_symbol = augmented;
 
     return grammar;
+}
+
+SyntaxGrammar *syntax_load_grammar(const char *path) {
+    const char *paths[] = {path};
+    return syntax_load_grammar_multiple(paths, 1);
 }
 
 bool lr1_symbol_is_terminal(const SyntaxGrammar *grammar, int symbol) {
