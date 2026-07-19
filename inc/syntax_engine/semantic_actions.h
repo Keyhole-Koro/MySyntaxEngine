@@ -65,13 +65,15 @@ typedef struct {
  * root is the semantic value of the accepted start symbol.
  *
  * Ownership contract:
- * - The engine owns stack entries only while parsing.
- * - On discarded/error values, actions->destroy is called when non-NULL.
+ * - The engine owns semantic values while they remain on the parser stack.
+ * - A reduce callback takes ownership of all non-NULL RHS values and returns
+ *   the value that the engine should own for the LHS symbol.
+ * - On syntax failure, values still on the stack are passed to destroy.
+ * - If a computed LHS cannot be shifted because the goto is invalid, that LHS
+ *   value is passed to destroy.
  * - On success, ownership of result.root transfers to the caller.
- * - syntax_action_result_free only releases syntax diagnostics, not root.
- *
- * This declaration defines the target public contract. Runtime support is
- * introduced separately so existing syntax-only callers remain unaffected.
+ * - syntax_action_result_free releases syntax diagnostics, never result.root.
+ * - Token lexeme storage remains caller-owned for the entire parse.
  */
 SyntaxActionResult syntax_parse_with_actions(
     SyntaxTable *table,
