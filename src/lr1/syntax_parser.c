@@ -1,4 +1,5 @@
 #include "syntax_engine_internal.h"
+#include "syntax_engine/semantic_actions.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -146,11 +147,8 @@ SyntaxResult syntax_parse_token_ids_ex(
                 break;
             }
 
-            int rhs_base = stack_len - production->rhs_len;  // slot of first RHS symbol
+            int rhs_base = stack_len - production->rhs_len;
 
-            /* Apply the production's grammar annotations to its RHS symbols.
-               Both roles and outline symbols name the symbol's leftmost token
-               (pos_stack), so terminals and nonterminals are handled uniformly. */
             if (production->annot) {
                 for (int j = 0; j < production->rhs_len; j++) {
                     const RhsAnnot *a = &production->annot[j];
@@ -161,7 +159,6 @@ SyntaxResult syntax_parse_token_ids_ex(
                     if (a->role && out_roles) {
                         bool ok = true;
                         if (a->single) {
-                            /* width = next symbol's start (or current index) - start */
                             int next = (j + 1 < production->rhs_len)
                                        ? pos_stack[rhs_base + j + 1] : (int)index;
                             ok = (next - tok == 1);
@@ -202,6 +199,187 @@ SyntaxResult syntax_parse_token_ids_ex(
     free(stack);
     free(pos_stack);
     return result;
+}
+
+static SyntaxSourceSpan zero_width_span(const SyntaxInputToken *tokens, size_t token_count, size_t index) {
+    SyntaxSourceSpan span = {0};
+    if (index < token_count) {
+        span.byte_start = tokens[index].span.byte_start;
+        span.byte_end = tokens[index].span.byte_start;
+        span.line_start = tokens[index].span.line_start;
+        span.column_start = tokens[index].span.column_start;
+        span.line_end = span.line_start;
+        span.column_end = span.column_start;
+    } else if (token_count > 0) {
+        span.byte_start = tokens[token_count - 1].span.byte_end;
+        span.byte_end = span.byte_start;
+        span.line_start = tokens[token_count - 1].span.line_end;
+        span.column_start = tokens[token_count - 1].span.column_end;
+        span.line_end = span.line_start;
+        span.column_end = span.column_start;
+    }
+    return span;
+}
+
+static void destroy_semantic_stack(
+    SyntaxSemanticValue *values,
+    int stack_len,
+    const SyntaxActionSet *actions
+) {
+    if (!actions || !actions->destroy) return;
+    for (int i = 1; i < stack_len; ++i) {
+        if (values[i].value) {
+            actions->destroy(values[i].symbol_id, values[i].value, actions->user_data);
+            values[i].value = NULL;
+        }
+    }
+}
+
+SyntaxActionResult syntax_parse_with_actions(
+    SyntaxTable *table,
+    const SyntaxInputToken *tokens,
+    size_t token_count,
+    const SyntaxActionSet *actions
+) {
+    SyntaxActionResult result;
+    memset(&result, 0, sizeof(result));
+    result.syntax.status = SYNTAX_ERROR;
+
+    if (!table || (token_count > 0 && !tokens)) {
+        return result;
+    }
+
+    const SyntaxGrammar *grammar = table->grammar;
+    int stack_cap = 128;
+    int stack_len = 1;
+    int *states = lr1_xcalloc((size_t)stack_cap, sizeof(int));
+    SyntaxSemanticValue *values = lr1_xcalloc((size_t)stack_cap, sizeof(SyntaxSemanticValue));
+    states[0] = 0;
+
+    size_t index = 0;
+    for (;;) {
+        int state = states[stack_len - 1];
+        int lookahead = grammar->eof_symbol;
+        if (index < token_count) {
+            lookahead = tokens[index].terminal_id;
+            if (lookahead < 0 || lookahead >= grammar->symbol_count ||
+                !lr1_symbol_is_terminal(grammar, lookahead)) {
+                result.syntax.status = SYNTAX_ERROR;
+                result.syntax.token_index = index;
+                fill_expected(table, &result.syntax, state);
+                break;
+            }
+        }
+
+        ActionCell action = table->actions[state][lookahead];
+        if (action.kind == ACTION_NONE) {
+            result.syntax.status = (lookahead == grammar->eof_symbol)
+                ? SYNTAX_INCOMPLETE : SYNTAX_ERROR;
+            result.syntax.token_index = index;
+            fill_expected(table, &result.syntax, state);
+            break;
+        }
+
+        if (action.kind == ACTION_ACCEPT) {
+            result.syntax.status = SYNTAX_OK;
+            result.syntax.token_index = index;
+            result.syntax.state = state;
+            if (stack_len > 1) {
+                result.root = values[stack_len - 1].value;
+                result.root_span = values[stack_len - 1].span;
+                values[stack_len - 1].value = NULL;
+            }
+            break;
+        }
+
+        if (action.kind == ACTION_SHIFT) {
+            if (stack_len == stack_cap) {
+                stack_cap *= 2;
+                states = lr1_xrealloc(states, (size_t)stack_cap * sizeof(int));
+                values = lr1_xrealloc(values, (size_t)stack_cap * sizeof(SyntaxSemanticValue));
+            }
+            states[stack_len] = action.value;
+            values[stack_len].symbol_id = lookahead;
+            if (index < token_count) {
+                values[stack_len].value = tokens[index].value;
+                values[stack_len].span = tokens[index].span;
+            } else {
+                values[stack_len].value = NULL;
+                values[stack_len].span = zero_width_span(tokens, token_count, index);
+            }
+            stack_len++;
+            index++;
+            continue;
+        }
+
+        if (action.kind == ACTION_REDUCE) {
+            const Production *production = &grammar->productions[action.value];
+            if (production->rhs_len >= stack_len) {
+                result.syntax.status = SYNTAX_ERROR;
+                result.syntax.token_index = index;
+                fill_expected(table, &result.syntax, state);
+                break;
+            }
+
+            int rhs_base = stack_len - production->rhs_len;
+            SyntaxSourceSpan span = zero_width_span(tokens, token_count, index);
+            if (production->rhs_len > 0) {
+                span = values[rhs_base].span;
+                span.byte_end = values[stack_len - 1].span.byte_end;
+                span.line_end = values[stack_len - 1].span.line_end;
+                span.column_end = values[stack_len - 1].span.column_end;
+            }
+
+            SyntaxReduceEvent event;
+            event.production_id = action.value;
+            event.lhs_symbol_id = production->lhs;
+            event.rhs = production->rhs_len > 0 ? &values[rhs_base] : NULL;
+            event.rhs_count = (size_t)production->rhs_len;
+            event.span = span;
+
+            void *lhs_value = NULL;
+            if (actions && actions->reduce) {
+                lhs_value = actions->reduce(&event, actions->user_data);
+            }
+
+            stack_len -= production->rhs_len;
+            int goto_from = states[stack_len - 1];
+            int goto_state = table->gotos[goto_from][production->lhs];
+            if (goto_state < 0) {
+                if (lhs_value && actions && actions->destroy) {
+                    actions->destroy(production->lhs, lhs_value, actions->user_data);
+                }
+                result.syntax.status = SYNTAX_ERROR;
+                result.syntax.token_index = index;
+                fill_expected(table, &result.syntax, goto_from);
+                break;
+            }
+
+            if (stack_len == stack_cap) {
+                stack_cap *= 2;
+                states = lr1_xrealloc(states, (size_t)stack_cap * sizeof(int));
+                values = lr1_xrealloc(values, (size_t)stack_cap * sizeof(SyntaxSemanticValue));
+            }
+            states[stack_len] = goto_state;
+            values[stack_len].symbol_id = production->lhs;
+            values[stack_len].value = lhs_value;
+            values[stack_len].span = span;
+            stack_len++;
+            continue;
+        }
+    }
+
+    destroy_semantic_stack(values, stack_len, actions);
+    free(states);
+    free(values);
+    return result;
+}
+
+void syntax_action_result_free(SyntaxActionResult *result) {
+    if (!result) return;
+    syntax_result_free(&result->syntax);
+    result->root = NULL;
+    memset(&result->root_span, 0, sizeof(result->root_span));
 }
 
 void syntax_result_free(SyntaxResult *result) {

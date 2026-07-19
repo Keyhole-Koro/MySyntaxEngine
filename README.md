@@ -2,22 +2,23 @@
 
 Canonical LR(1) syntax engine for MyLang grammar experiments.
 
-The current implementation can load a grammar file, build an LR(1) parse table,
-parse a token-name stream, and report expected tokens on syntax errors or
-incomplete input.
+The engine can load a grammar file, build an LR(1) parse table, parse token-name
+or token-id streams, report expected tokens, and parse caller-provided semantic
+values with reduction callbacks and source spans.
 
 ## Layout
 
 ```text
 .
 ├── inc/syntax_engine/
-│   └── syntax_engine.h          # Public API
+│   ├── syntax_engine.h          # Syntax-only public API
+│   └── semantic_actions.h       # AST-building and source-span API
 ├── src/
 │   ├── cli/main.c               # Debug/demo CLI
 │   ├── grammar/                 # Future grammar loader split
-│   ├── lr1/syntax_engine.c      # LR(1) table builder and parser driver
-│   ├── runtime/                 # Future parse runtime split
-│   └── support/                 # Future shared helpers
+│   ├── lr1/                     # Table builder and parser runtime
+│   ├── runtime/                 # Future runtime split
+│   └── support/                 # Shared helpers
 ├── tests/fixtures/grammars/     # Sample grammars
 └── legacy/old_lr1_table/        # Previous prototype, not built by default
 ```
@@ -39,3 +40,9 @@ Use `--table` to print LR(1) item sets:
 ```bash
 ./build/bin/output --table tests/fixtures/grammars/sample2.txt
 ```
+
+## Semantic actions
+
+Include `syntax_engine/semantic_actions.h` and call
+`syntax_parse_with_actions()` to build caller-defined AST values during LR
+reductions. See `docs/semantic-actions.md` for source-span and ownership rules.

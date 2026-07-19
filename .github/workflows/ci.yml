@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make -s
+      - name: Build semantic action tests
+        run: make -s build/bin/test_semantic_actions
+      - name: Run semantic action tests
+        run: ./build/bin/test_semantic_actions > semantic-action-test.log 2>&1
+      - name: Upload semantic action diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-action-test-log
+          path: semantic-action-test.log
+          if-no-files-found: error
+      - name: Smoke test CLI
+        run: ./build/bin/output tests/fixtures/grammars/sample2.txt int id '=' id ';'
