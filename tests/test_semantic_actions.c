@@ -74,6 +74,12 @@ static void test_success_returns_root_and_semantic_span(SyntaxGrammar *grammar, 
     };
 
     SyntaxActionResult result = syntax_parse_with_actions(table, tokens, 2, &actions);
+    fprintf(stderr,
+            "root span: bytes=%zu..%zu lines=%zu:%zu..%zu:%zu reductions=%d\n",
+            result.root_span.byte_start, result.root_span.byte_end,
+            result.root_span.line_start, result.root_span.column_start,
+            result.root_span.line_end, result.root_span.column_end,
+            state.reduce_count);
     CHECK(result.syntax.status == SYNTAX_OK, "valid token stream must parse");
     CHECK(result.root == root_value, "accepted root must preserve callback value");
     CHECK(result.root_span.byte_start == 0, "root byte start");
