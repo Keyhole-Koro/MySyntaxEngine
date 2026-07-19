@@ -300,8 +300,13 @@ SyntaxActionResult syntax_parse_with_actions(
             }
             states[stack_len] = action.value;
             values[stack_len].symbol_id = lookahead;
-            values[stack_len].value = tokens[index].value;
-            values[stack_len].span = tokens[index].span;
+            if (index < token_count) {
+                values[stack_len].value = tokens[index].value;
+                values[stack_len].span = tokens[index].span;
+            } else {
+                values[stack_len].value = NULL;
+                values[stack_len].span = zero_width_span(tokens, token_count, index);
+            }
             stack_len++;
             index++;
             continue;
