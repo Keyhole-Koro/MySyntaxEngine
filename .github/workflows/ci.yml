@@ -11,8 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build
-        run: make
+        run: make -s
       - name: Run semantic action tests
-        run: make test
+        run: make -s test
       - name: Smoke test CLI
         run: ./build/bin/output tests/fixtures/grammars/sample2.txt int id '=' id ';'
