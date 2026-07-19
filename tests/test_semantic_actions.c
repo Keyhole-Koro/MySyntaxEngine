@@ -47,8 +47,8 @@ static SyntaxSourceSpan span(size_t byte_start, size_t byte_end,
     return value;
 }
 
-static void test_success_returns_root_and_combined_span(SyntaxGrammar *grammar, SyntaxTable *table) {
-    puts("test: success root and combined span");
+static void test_success_returns_root_and_semantic_span(SyntaxGrammar *grammar, SyntaxTable *table) {
+    puts("test: success root and semantic span");
     fflush(stdout);
     int id = syntax_terminal_id(grammar, "id");
     int semicolon = syntax_terminal_id(grammar, ";");
@@ -77,12 +77,12 @@ static void test_success_returns_root_and_combined_span(SyntaxGrammar *grammar, 
     CHECK(result.syntax.status == SYNTAX_OK, "valid token stream must parse");
     CHECK(result.root == root_value, "accepted root must preserve callback value");
     CHECK(result.root_span.byte_start == 0, "root byte start");
-    CHECK(result.root_span.byte_end == 5, "root byte end");
+    CHECK(result.root_span.byte_end == 4, "root byte end excludes trailing syntax-only token");
     CHECK(result.root_span.line_start == 1, "root line start");
     CHECK(result.root_span.column_start == 1, "root column start");
     CHECK(result.root_span.line_end == 1, "root line end");
-    CHECK(result.root_span.column_end == 6, "root column end");
-    CHECK(state.reduce_count >= 2, "reduce callback must run for value and program");
+    CHECK(result.root_span.column_end == 5, "root column end excludes trailing syntax-only token");
+    CHECK(state.reduce_count >= 1, "reduce callback must run for semantic value");
     CHECK(state.destroy_count == 0, "successful root must not be destroyed");
 
     syntax_action_result_free(&result);
@@ -146,7 +146,7 @@ int main(void) {
     CHECK(table != NULL, "semantic action table must build");
     CHECK(syntax_table_conflict_count(table) == 0, "semantic action grammar must be conflict free");
 
-    test_success_returns_root_and_combined_span(grammar, table);
+    test_success_returns_root_and_semantic_span(grammar, table);
     test_error_destroys_shifted_values(grammar, table);
     test_invalid_terminal_is_reported(table);
 
