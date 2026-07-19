@@ -1,0 +1,4 @@
+program : value ';' $
+
+value : 'id'
+      | 'num'
