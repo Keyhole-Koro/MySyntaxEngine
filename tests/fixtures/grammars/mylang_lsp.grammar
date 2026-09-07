@@ -58,17 +58,21 @@ structDecl  : 'STRUCT' 'IDENTIFIER'@struct@decl(struct) 'L_BRACE' 'R_BRACE' 'SEM
 fieldList   : fieldList varDecl
             | varDecl
 
-enumDecl    : 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
-            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
-            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'R_BRACE'
-            | 'ENUM' 'IDENTIFIER'@struct@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE'
+enumDecl    : 'ENUM' 'IDENTIFIER'@result@decl(enum) 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) 'L_BRACE' enumItems 'R_BRACE'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) 'L_BRACE' enumItems 'COMMA' 'R_BRACE'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) typeParams 'L_BRACE' enumItems 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) typeParams 'L_BRACE' enumItems 'COMMA' 'R_BRACE' 'SEMICOLON'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) typeParams 'L_BRACE' enumItems 'R_BRACE'
+            | 'ENUM' 'IDENTIFIER'@result@decl(enum) typeParams 'L_BRACE' enumItems 'COMMA' 'R_BRACE'
 
 enumItems   : enumItems 'COMMA' enumItem
             | enumItem
 
-enumItem    : 'IDENTIFIER'@enumMember@decl(enumMember)
-            | 'IDENTIFIER'@enumMember@decl(enumMember) 'ASSIGN' 'NUMBER'
-            | 'IDENTIFIER'@enumMember@decl(enumMember) 'L_PARENTHESES' type 'R_PARENTHESES'
+enumItem    : 'IDENTIFIER'@resultVariant@decl(enumMember)
+            | 'IDENTIFIER'@resultVariant@decl(enumMember) 'ASSIGN' 'NUMBER'
+            | 'IDENTIFIER'@resultVariant@decl(enumMember) 'L_PARENTHESES' type 'R_PARENTHESES'
 
 funcDecl    : funcDef
             | funcProto
@@ -299,12 +303,33 @@ argList     : argList 'COMMA' expr
             | expr
 
 primary     : 'IDENTIFIER'@variable
+            | qualifiedName
             | genericCall
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
+            | caseExpr
             | funLiteral
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
+
+qualifiedName: 'IDENTIFIER'@enum 'COLONCOLON' 'IDENTIFIER'@enumMember
+
+caseExpr    : 'CASE' expr 'OF' 'L_BRACE' caseArmList 'R_BRACE'
+
+caseArmList : caseArmList caseArm
+            | caseArm
+
+caseArm     : casePattern 'MEMBER' expr 'SEMICOLON'
+
+casePattern : 'IDENTIFIER'@enumMember
+            | qualifiedName
+            | 'UNDERSCORE'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES' 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES' 'R_PARENTHESES'
 
 genericCall : 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
             | 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'
