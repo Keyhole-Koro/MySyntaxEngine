@@ -308,6 +308,7 @@ primary     : 'IDENTIFIER'@variable
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
+            | 'UNDERSCORE'
             | caseExpr
             | funLiteral
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
@@ -330,6 +331,8 @@ casePattern : 'IDENTIFIER'@enumMember
             | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'R_PARENTHESES'
             | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES' 'R_PARENTHESES'
             | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES' 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES' 'R_PARENTHESES'
+            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES' 'R_PARENTHESES'
 
 genericCall : 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
             | 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'
