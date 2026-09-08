@@ -17,13 +17,16 @@ top         : packageDecl
             | varDecl
             | funcDecl
 
-packageDecl : 'PACKAGE' 'IDENTIFIER'@namespace 'SEMICOLON'
+packageDecl : 'PACKAGE' namespaceName 'SEMICOLON'
 
-importDecl  : 'IMPORT' 'IDENTIFIER'@namespace 'SEMICOLON'
-            | 'IMPORT' 'IDENTIFIER'@namespace 'FROM' 'STRING_LITERAL' 'SEMICOLON'
+importDecl  : 'IMPORT' namespaceName 'SEMICOLON'
+            | 'IMPORT' namespaceName 'FROM' 'STRING_LITERAL' 'SEMICOLON'
             | 'IMPORT' 'L_BRACE' identifierList 'R_BRACE' 'FROM' 'STRING_LITERAL' 'SEMICOLON'
 
-testDecl    : 'IDENTIFIER'@function 'L_PARENTHESES' 'STRING_LITERAL' 'COMMA' testOptions 'COMMA' testBody 'R_PARENTHESES' 'SEMICOLON'
+namespaceName: 'IDENTIFIER'@namespace
+            | 'TEST'@namespace
+
+testDecl    : 'TEST'@function 'L_PARENTHESES' 'STRING_LITERAL' 'COMMA' testOptions 'COMMA' testBody 'R_PARENTHESES' 'SEMICOLON'
 
 testOptions : 'L_BRACE' 'R_BRACE'
             | 'L_BRACE' testOptionList 'R_BRACE'
@@ -77,15 +80,24 @@ enumItem    : 'IDENTIFIER'@resultVariant@decl(enumMember)
 funcDecl    : funcDef
             | funcProto
 
-funcProto   : type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' 'R_PARENTHESES' 'SEMICOLON'
-            | type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' paramList 'R_PARENTHESES' 'SEMICOLON'
-            | type 'IDENTIFIER'@function@decl(function) typeParams 'L_PARENTHESES' 'R_PARENTHESES' 'SEMICOLON'
-            | type 'IDENTIFIER'@function@decl(function) typeParams 'L_PARENTHESES' paramList 'R_PARENTHESES' 'SEMICOLON'
+// Only the receiver clause changes the declared symbol's role (function vs
+// method), so that axis stays as two explicit alternatives; the other two
+// axes (type parameters, parameter list) are each independently optional
+// and don't affect tagging, so they're factored into their own nullable
+// nonterminals instead of being crossed by hand.
+funcProto   : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause 'SEMICOLON'
+            | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause 'SEMICOLON'
 
-funcDef     : type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' 'R_PARENTHESES' block
-            | type 'IDENTIFIER'@function@decl(function) 'L_PARENTHESES' paramList 'R_PARENTHESES' block
-            | type 'IDENTIFIER'@function@decl(function) typeParams 'L_PARENTHESES' 'R_PARENTHESES' block
-            | type 'IDENTIFIER'@function@decl(function) typeParams 'L_PARENTHESES' paramList 'R_PARENTHESES' block
+funcDef     : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause block
+            | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause block
+
+typeParamsOpt: typeParams
+            |
+
+paramsClause: 'L_PARENTHESES' 'R_PARENTHESES'
+            | 'L_PARENTHESES' paramList 'R_PARENTHESES'
+
+recv        : 'L_PARENTHESES' param 'R_PARENTHESES'
 
 typeParams  : 'GENERIC_LT' typeParamList 'GENERIC_GT'
 
@@ -303,11 +315,13 @@ argList     : argList 'COMMA' expr
             | expr
 
 primary     : 'IDENTIFIER'@variable
+            | 'TEST'@namespace
             | qualifiedName
             | genericCall
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
+            | 'UNDERSCORE'
             | caseExpr
             | funLiteral
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
@@ -324,12 +338,20 @@ caseArm     : casePattern 'MEMBER' expr 'SEMICOLON'
 casePattern : 'IDENTIFIER'@enumMember
             | qualifiedName
             | 'UNDERSCORE'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'R_PARENTHESES'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'R_PARENTHESES'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'IDENTIFIER'@variable 'R_PARENTHESES' 'R_PARENTHESES'
-            | 'IDENTIFIER'@enumMember 'L_PARENTHESES' qualifiedName 'L_PARENTHESES' 'UNDERSCORE' 'R_PARENTHESES' 'R_PARENTHESES'
+            | variantHead 'L_PARENTHESES' 'R_PARENTHESES'
+            | variantHead 'L_PARENTHESES' patternArgList 'R_PARENTHESES'
+
+variantHead : 'IDENTIFIER'@enumMember
+            | qualifiedName
+
+patternArgList: patternArgList 'COMMA' patternArg
+            | patternArg
+
+patternArg  : 'IDENTIFIER'@variable
+            | 'UNDERSCORE'
+            | qualifiedName
+            | variantHead 'L_PARENTHESES' 'R_PARENTHESES'
+            | variantHead 'L_PARENTHESES' patternArgList 'R_PARENTHESES'
 
 genericCall : 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
             | 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'

@@ -194,6 +194,16 @@ SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
         char *text = lr1_trim(line);
         if (*text == '\0') continue;
 
+        /* Line comment: everything from an unquoted '//' to end of line.
+           Terminals only ever hold word characters inside their quotes, so
+           '//' can never occur there and this split is unambiguous. */
+        char *comment = strstr(text, "//");
+        if (comment) {
+            *comment = '\0';
+            text = lr1_trim(text);
+            if (*text == '\0') continue;
+        }
+
         /* Directive: %scope <open-terminal> <close-terminal> or %extend */
         if (text[0] == '%') {
             char dir[64], arg1[64], arg2[64];
