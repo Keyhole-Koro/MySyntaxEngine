@@ -16,6 +16,36 @@ top         : packageDecl
             | enumDecl
             | varDecl
             | funcDecl
+            | attributedDecl
+
+// `@app(single, name = "Editor") struct Editor {...};` -- attributes precede
+// the struct, function or method they apply to (parser_lower_app.c decides
+// which are legal where). "decorator" is the LSP semantic token type.
+attributedDecl: attrList attrTarget
+
+attrList    : attrList attribute
+            | attribute
+
+attribute   : 'AT' 'IDENTIFIER'@decorator
+            | 'AT' 'IDENTIFIER'@decorator 'L_PARENTHESES' attrArgs 'R_PARENTHESES'
+
+attrArgs    : attrArgs 'COMMA' attrArg
+            | attrArg
+
+attrArg     : 'IDENTIFIER'@property
+            | 'IDENTIFIER'@property 'ASSIGN' literal
+            | literal
+
+attrTarget  : structDecl
+            | funcDecl
+            | exportDecl
+
+literal     : 'NUMBER'
+            | 'SUB' 'NUMBER'
+            | 'STRING_LITERAL'
+            | 'CHAR_LITERAL'
+            | 'TRUE_LITERAL'
+            | 'FALSE_LITERAL'
 
 packageDecl : 'PACKAGE' namespaceName 'SEMICOLON'
 
@@ -110,7 +140,9 @@ paramList   : paramList 'COMMA' param
             | restParam
 
 param       : type declarator@parameter
+            | type declarator@parameter 'ASSIGN' literal
             | 'MUT' type declarator@parameter
+            | 'MUT' type declarator@parameter 'ASSIGN' literal
 
 restParam   : 'REST' 'IDENTIFIER'@parameter
 
