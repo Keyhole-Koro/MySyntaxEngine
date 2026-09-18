@@ -8,9 +8,12 @@ mlxElement : 'MLX_TAG_OPEN' 'IDENTIFIER'@struct mlxAttributes 'MLX_TAG_CLOSE' ml
 mlxAttributes : mlxAttributes mlxAttribute
               | mlxAttribute
 
+// `ref` is a keyword elsewhere but a property name here: `ref={c->label}`
+// binds the node id (see MyLangCompiler's parser_lower_dom.c).
 mlxAttribute : 'IDENTIFIER'@property 'ASSIGN' 'STRING_LITERAL'
              | 'IDENTIFIER'@property 'ASSIGN' 'L_BRACE' expr 'R_BRACE'
              | 'IDENTIFIER'@property
+             | 'REF'@property 'ASSIGN' 'L_BRACE' expr 'R_BRACE'
 
 mlxChildren : mlxChildren mlxChild
             | mlxChild
