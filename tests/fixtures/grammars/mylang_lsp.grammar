@@ -17,30 +17,7 @@ top         : packageDecl
             | varDecl
             | funcDecl
             | attributedDecl
-            | annotationDecl
 
-// `annotation app(bool single = false) on struct T requires method view { ... }`
-// or `annotation timer(i32 ms) on method of app;`. The words after the
-// parameters (on / struct / method / function / of / requires / names) are
-// plain identifiers to the lexer, so the tail is accepted loosely here and
-// checked by the compiler (parser_toplevel.c). The body arrives as one
-// TEMPLATE_BODY token: raw MyLang text with @directives.
-annotationDecl: 'ANNOTATION' 'IDENTIFIER'@decorator@decl(function) annotParamsOpt annotTail annotBody
-
-annotParamsOpt: 'L_PARENTHESES' 'R_PARENTHESES'
-            | 'L_PARENTHESES' paramList 'R_PARENTHESES'
-            |
-
-annotTail   : annotTail annotTailItem
-            | annotTailItem
-
-annotTailItem: 'IDENTIFIER'
-            | 'STRUCT'
-            | 'OF'
-            | 'COMMA'
-
-annotBody   : 'SEMICOLON'
-            | 'TEMPLATE_BODY'
 
 // `@app(single, name = "Editor") struct Editor {...};` -- attributes precede
 // the struct, function or method they apply to (parser_lower_app.c decides
@@ -99,7 +76,6 @@ exportable  : typedefStmt
             | enumDecl
             | varDecl
             | funcDecl
-            | annotationDecl
 
 externDecl  : 'EXTERN' varDecl
             | 'EXTERN' funcProto
