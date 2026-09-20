@@ -354,6 +354,8 @@ primary     : 'IDENTIFIER'@variable
             | 'NUMBER'
             | 'STRING_LITERAL'
             | 'CHAR_LITERAL'
+            | 'TRUE_LITERAL'
+            | 'FALSE_LITERAL'
             | 'UNDERSCORE'
             | caseExpr
             | funLiteral
