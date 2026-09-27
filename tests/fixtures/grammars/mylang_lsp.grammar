@@ -132,8 +132,11 @@ recv        : 'L_PARENTHESES' param 'R_PARENTHESES'
 
 typeParams  : 'GENERIC_LT' typeParamList 'GENERIC_GT'
 
-typeParamList: typeParamList 'COMMA' 'IDENTIFIER'@type
-            | 'IDENTIFIER'@type
+typeParamList: typeParamList 'COMMA' typeParam
+            | typeParam
+
+typeParam   : 'IDENTIFIER'@type
+            | 'CONST' 'IDENTIFIER'@type
 
 paramList   : paramList 'COMMA' param
             | paramList 'COMMA' restParam
@@ -159,6 +162,7 @@ declarator  : 'IDENTIFIER'
 
 arraySuffix : 'L_BRACKET' 'R_BRACKET'
             | 'L_BRACKET' 'NUMBER' 'R_BRACKET'
+            | 'L_BRACKET' 'IDENTIFIER'@type 'R_BRACKET'
 
 initList    : 'L_BRACE' exprList 'R_BRACE'
             | 'L_BRACE' exprList 'COMMA' 'R_BRACE'
@@ -243,8 +247,11 @@ baseType    : primitiveType
 
 typeArgs    : 'GENERIC_LT' typeArgList 'GENERIC_GT'
 
-typeArgList : typeArgList 'COMMA' type
-            | type
+typeArgList : typeArgList 'COMMA' genericArg
+            | genericArg
+
+genericArg  : type
+            | 'NUMBER'
 
 primitiveType: 'BOOL'
             | 'U8'
