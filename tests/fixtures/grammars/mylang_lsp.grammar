@@ -12,6 +12,7 @@ top         : packageDecl
             | exportDecl
             | externDecl
             | typedefStmt
+            | newtypeStmt
             | structDecl
             | enumDecl
             | varDecl
@@ -72,6 +73,7 @@ testBody    : 'L_PARENTHESES' 'R_PARENTHESES' 'FAT_ARROW' block
 exportDecl  : 'EXPORT' exportable
 
 exportable  : typedefStmt
+            | newtypeStmt
             | structDecl
             | enumDecl
             | varDecl
@@ -82,6 +84,8 @@ externDecl  : 'EXTERN' varDecl
 
 typedefStmt : 'TYPEDEF' type 'IDENTIFIER'@type@decl(type) 'SEMICOLON'
             | 'TYPEDEF' structDecl
+
+newtypeStmt : 'NEWTYPE' 'IDENTIFIER'@type@decl(type) 'ASSIGN' type 'SEMICOLON'
 
 structDecl  : 'STRUCT' 'IDENTIFIER'@struct@decl(struct) 'L_BRACE' 'R_BRACE' 'SEMICOLON'
             | 'STRUCT' 'IDENTIFIER'@struct@decl(struct) 'L_BRACE' fieldList 'R_BRACE' 'SEMICOLON'
@@ -231,6 +235,16 @@ type        : typePrefix baseType ptrList
             | typePrefix baseType
             | baseType ptrList
             | baseType
+            | functionType
+
+functionType: 'FN' 'L_PARENTHESES' 'R_PARENTHESES' 'MEMBER' type
+            | 'FN' 'L_PARENTHESES' functionTypeParams 'R_PARENTHESES' 'MEMBER' type
+
+functionTypeParams: functionTypeParams 'COMMA' functionTypeParam
+                  | functionTypeParam
+
+functionTypeParam: type
+                 | type declarator@parameter
 
 typePrefix  : 'CONST'
             | 'REF'
