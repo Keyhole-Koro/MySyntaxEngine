@@ -194,6 +194,7 @@ simpleStmt  : block
             | varDecl
             | doWhileStmt
             | returnStmt
+            | deferStmt
             | breakStmt
             | continueStmt
             | yieldStmt
@@ -222,6 +223,9 @@ forExpr     : expr
 
 returnStmt  : 'RETURN' 'SEMICOLON'
             | 'RETURN' expr 'SEMICOLON'
+
+deferStmt   : 'DEFER' expr 'SEMICOLON'
+            | 'DEFER' block
 
 breakStmt   : 'BREAK' 'SEMICOLON'
 
