@@ -17,6 +17,8 @@ top         : packageDecl
             | enumDecl
             | varDecl
             | funcDecl
+            | traitDecl
+            | implDecl
             | attributedDecl
 
 
@@ -78,6 +80,33 @@ exportable  : typedefStmt
             | enumDecl
             | varDecl
             | funcDecl
+            | traitDecl
+            | implDecl
+
+// `trait From<S> { Self from(S source); }` -- a trait lists prototypes, and
+// an item may carry a default body. The legend has no interface token type,
+// so a trait name reads as a type.
+traitDecl   : 'TRAIT' 'IDENTIFIER'@type@decl(interface) typeParamsOpt 'L_BRACE' 'R_BRACE'
+            | 'TRAIT' 'IDENTIFIER'@type@decl(interface) typeParamsOpt 'L_BRACE' traitItems 'R_BRACE'
+
+traitItems  : traitItems funcProto
+            | traitItems funcDef
+            | funcProto
+            | funcDef
+
+// `impl Eq for P { ... }`, `impl From<A> for B = B::Value;`, or a generic
+// type's `impl<T: Eq> Eq for Box<T> { ... }`
+implDecl    : 'IMPL' traitRef 'FOR' type 'L_BRACE' 'R_BRACE'
+            | 'IMPL' traitRef 'FOR' type 'L_BRACE' implItems 'R_BRACE'
+            | 'IMPL' traitRef 'FOR' type 'ASSIGN' expr 'SEMICOLON'
+            | 'IMPL' typeParams traitRef 'FOR' type 'L_BRACE' 'R_BRACE'
+            | 'IMPL' typeParams traitRef 'FOR' type 'L_BRACE' implItems 'R_BRACE'
+
+implItems   : implItems funcDef
+            | funcDef
+
+traitRef    : 'IDENTIFIER'@type
+            | 'IDENTIFIER'@type typeArgs
 
 externDecl  : 'EXTERN' varDecl
             | 'EXTERN' funcProto
@@ -120,11 +149,19 @@ funcDecl    : funcDef
 // axes (type parameters, parameter list) are each independently optional
 // and don't affect tagging, so they're factored into their own nullable
 // nonterminals instead of being crossed by hand.
+// `from` is the import keyword and also From's conversion function, so it is
+// accepted as a function or method name. (A nullable typeParamsOpt after a
+// name nonterminal loses the paramsClause lookahead, hence the spelled-out
+// alternatives.)
 funcProto   : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause 'SEMICOLON'
             | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause 'SEMICOLON'
+            | type 'FROM'@function@decl(function) paramsClause 'SEMICOLON'
+            | type recv 'FROM'@method@decl(method) paramsClause 'SEMICOLON'
 
 funcDef     : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause block
             | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause block
+            | type 'FROM'@function@decl(function) paramsClause block
+            | type recv 'FROM'@method@decl(method) paramsClause block
 
 typeParamsOpt: typeParams
             |
@@ -140,7 +177,12 @@ typeParamList: typeParamList 'COMMA' typeParam
             | typeParam
 
 typeParam   : 'IDENTIFIER'@type
+            | 'IDENTIFIER'@type 'COLON' boundList
             | 'CONST' 'IDENTIFIER'@type
+
+// `<T: Eq + From<S>>`
+boundList   : boundList 'ADD' traitRef
+            | traitRef
 
 paramList   : paramList 'COMMA' param
             | paramList 'COMMA' restParam
@@ -212,6 +254,7 @@ forHeader   : 'FOR' 'L_PARENTHESES' forInit 'SEMICOLON' forExpr 'SEMICOLON' forE
             | 'FOR' 'L_PARENTHESES' 'SEMICOLON' forExpr 'SEMICOLON' 'R_PARENTHESES'
             | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' forExpr 'R_PARENTHESES'
             | 'FOR' 'L_PARENTHESES' 'SEMICOLON' 'SEMICOLON' 'R_PARENTHESES'
+            | 'FOR' 'L_PARENTHESES' type declarator@variable 'IDENTIFIER'@keyword expr 'R_PARENTHESES'
 
 forInit     : type declarator@variable
             | type declarator@variable 'ASSIGN' expr
@@ -364,6 +407,8 @@ postfixExpr : primary
             | postfixExpr 'INC'
             | postfixExpr 'DEC'
             | postfixExpr 'DOT' 'IDENTIFIER'@property
+            | postfixExpr 'DOT' 'FROM'@method
+            | postfixExpr 'QUESTION'
             | postfixExpr 'MEMBER' 'IDENTIFIER'@property
             | postfixExpr 'L_BRACKET' expr 'R_BRACKET'
             | postfixExpr@function:single 'L_PARENTHESES' 'R_PARENTHESES'
@@ -387,6 +432,9 @@ primary     : 'IDENTIFIER'@variable
             | 'L_PARENTHESES' expr 'R_PARENTHESES'
 
 qualifiedName: 'IDENTIFIER'@enum 'COLONCOLON' 'IDENTIFIER'@enumMember
+            | 'IDENTIFIER'@type 'COLONCOLON' 'FROM'@function
+            | 'IDENTIFIER'@type typeArgs 'COLONCOLON' 'IDENTIFIER'@function
+            | 'IDENTIFIER'@type typeArgs 'COLONCOLON' 'FROM'@function
 
 caseExpr    : 'CASE' expr 'OF' 'L_BRACE' caseArmList 'R_BRACE'
 
