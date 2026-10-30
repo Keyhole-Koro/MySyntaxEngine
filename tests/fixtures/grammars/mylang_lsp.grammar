@@ -240,7 +240,6 @@ simpleStmt  : block
             | breakStmt
             | continueStmt
             | yieldStmt
-            | uncheckedStmt
             | expr 'SEMICOLON'
             | 'SEMICOLON'
 
@@ -276,7 +275,6 @@ continueStmt: 'CONTINUE' 'SEMICOLON'
 
 yieldStmt   : 'YIELD' expr 'SEMICOLON'
 
-uncheckedStmt: 'UNCHECKED' block
 
 type        : typePrefix baseType ptrList
             | typePrefix baseType
@@ -294,10 +292,10 @@ functionTypeParam: type
                  | type declarator@parameter
 
 typePrefix  : 'CONST'
-            | 'REF'
-            | 'REF' 'MUT'
-            | 'CONST' 'REF'
-            | 'CONST' 'REF' 'MUT'
+            | 'BORROW'
+            | 'BORROW' 'MUT'
+            | 'CONST' 'BORROW'
+            | 'CONST' 'BORROW' 'MUT'
 
 ptrList     : ptrList 'ASTARISK'
             | 'ASTARISK'
