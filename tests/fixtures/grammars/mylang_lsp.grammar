@@ -399,6 +399,8 @@ postfixExpr : primary
             | postfixExpr 'DEC'
             | postfixExpr 'DOT' 'IDENTIFIER'@property
             | postfixExpr 'DOT' 'FROM'@method
+            | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
+            | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'
             | postfixExpr 'QUESTION'
             | postfixExpr 'MEMBER' 'IDENTIFIER'@property
             | postfixExpr 'L_BRACKET' expr 'R_BRACKET'
