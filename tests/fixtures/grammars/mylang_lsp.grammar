@@ -447,9 +447,12 @@ caseArmList : caseArmList caseArm
 
 caseArm     : casePattern 'MEMBER' expr 'SEMICOLON'
 
+// The syntax checker puts parentheses around a key that is not a pattern, such
+// as `1` or `p->kind` (see classify_case_keys).
 casePattern : 'IDENTIFIER'@enumMember
             | qualifiedName
             | 'UNDERSCORE'
+            | 'L_PARENTHESES' expr 'R_PARENTHESES'
             | variantHead 'L_PARENTHESES' 'R_PARENTHESES'
             | variantHead 'L_PARENTHESES' patternArgList 'R_PARENTHESES'
 
