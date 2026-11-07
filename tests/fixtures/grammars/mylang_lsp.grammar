@@ -190,9 +190,13 @@ paramList   : paramList 'COMMA' param
             | restParam
 
 param       : type declarator@parameter
-            | type declarator@parameter 'ASSIGN' literal
+            | type declarator@parameter 'ASSIGN' paramDefault
             | 'MOVE' type declarator@parameter
-            | 'MOVE' type declarator@parameter 'ASSIGN' literal
+            | 'MOVE' type declarator@parameter 'ASSIGN' paramDefault
+
+// `Option<i32> value = None` is the one default that is not a literal.
+paramDefault: literal
+            | 'IDENTIFIER'@enumMember
 
 restParam   : 'REST' 'IDENTIFIER'@parameter
 
@@ -323,7 +327,12 @@ exprList    : exprList 'COMMA' expr
 expr        : assignExpr
 
 assignExpr  : unaryExpr 'ASSIGN' assignExpr
-            | logicalOrExpr
+            | conditionalExpr
+
+// The checker turns a `?` with an expression after it into TERNARY, so that
+// `a ? b : c` is not read as the postfix `?` of `a` (see is_try_question).
+conditionalExpr: logicalOrExpr
+            | logicalOrExpr 'TERNARY' expr 'COLON' conditionalExpr
 
 logicalOrExpr: logicalOrExpr 'OR' logicalAndExpr
             | logicalAndExpr
@@ -383,6 +392,7 @@ castType    : typePrefix primitiveType ptrList
             | typePrefix primitiveType
             | primitiveType ptrList
             | primitiveType
+            | functionType
 
 unaryOp     : 'NOT'
             | 'BITNOT'
@@ -399,6 +409,7 @@ postfixExpr : primary
             | postfixExpr 'DEC'
             | postfixExpr 'DOT' 'IDENTIFIER'@property
             | postfixExpr 'DOT' 'FROM'@method
+            | postfixExpr 'DOT' 'OF'@method
             | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
             | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'
             | postfixExpr 'QUESTION'
@@ -459,6 +470,8 @@ genericCall : 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
 
 funLiteral  : 'L_PARENTHESES' 'R_PARENTHESES' 'FAT_ARROW' block
             | 'L_PARENTHESES' funParamList 'R_PARENTHESES' 'FAT_ARROW' block
+            | 'L_PARENTHESES' 'R_PARENTHESES' block
+            | 'L_PARENTHESES' funParamList 'R_PARENTHESES' block
 
 funParamList: funParamList 'COMMA' funParam
             | funParam
