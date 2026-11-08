@@ -171,26 +171,19 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
     return true;
 }
 
-SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
-    SyntaxGrammar *grammar = lr1_xcalloc(1, sizeof(SyntaxGrammar));
-    grammar->start_symbol = -1;
-    grammar->scope_open = -1;
-    grammar->scope_close = -1;
-    grammar->eof_symbol = add_symbol(grammar, "$", SYMBOL_TERMINAL);
+/* Add the rules and directives of the grammar file at `path` to `grammar`.
+   Returns false, having said why, if the file cannot be read or parsed. */
+static bool load_grammar_file(SyntaxGrammar *grammar, const char *path) {
+    FILE *file = fopen(path, "r");
+    if (!file) {
+        fprintf(stderr, "failed to open grammar: %s\n", path);
+        return false;
+    }
 
-    for (int i = 0; i < count; i++) {
-        const char *path = paths[i];
-        FILE *file = fopen(path, "r");
-        if (!file) {
-            fprintf(stderr, "failed to open grammar: %s\n", path);
-            syntax_free_grammar(grammar);
-            return NULL;
-        }
+    char line[1024];
+    int current_lhs = -1;
 
-        char line[1024];
-        int current_lhs = -1;
-
-        while (fgets(line, sizeof(line), file)) {
+    while (fgets(line, sizeof(line), file)) {
         char *text = lr1_trim(line);
         if (*text == '\0') continue;
 
@@ -247,9 +240,8 @@ SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
         } else if (pipe) {
             if (current_lhs < 0) {
                 fprintf(stderr, "grammar alternative without lhs: %s\n", path);
-                syntax_free_grammar(grammar);
                 fclose(file);
-                return NULL;
+                return false;
             }
             rhs_text = lr1_trim(pipe + 1);
         } else {
@@ -261,9 +253,8 @@ SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
         int rhs_len = 0;
         if (!parse_rhs(grammar, rhs_text, &rhs, &annot, &rhs_len)) {
             fprintf(stderr, "failed to parse grammar rhs: %s\n", rhs_text);
-            syntax_free_grammar(grammar);
             fclose(file);
-            return NULL;
+            return false;
         }
         add_production(grammar, current_lhs, rhs, annot, rhs_len);
         free(rhs);
@@ -271,7 +262,22 @@ SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
     }
 
     fclose(file);
-    } // end for loop over paths
+    return true;
+}
+
+SyntaxGrammar *syntax_load_grammar_multiple(const char **paths, int count) {
+    SyntaxGrammar *grammar = lr1_xcalloc(1, sizeof(SyntaxGrammar));
+    grammar->start_symbol = -1;
+    grammar->scope_open = -1;
+    grammar->scope_close = -1;
+    grammar->eof_symbol = add_symbol(grammar, "$", SYMBOL_TERMINAL);
+
+    for (int i = 0; i < count; i++) {
+        if (!load_grammar_file(grammar, paths[i])) {
+            syntax_free_grammar(grammar);
+            return NULL;
+        }
+    }
 
     if (grammar->start_symbol < 0 || grammar->production_count == 0) {
         fprintf(stderr, "grammar has no productions\n");
