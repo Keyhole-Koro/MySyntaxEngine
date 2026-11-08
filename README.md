@@ -15,12 +15,8 @@ values with reduction callbacks and source spans.
 │   └── semantic_actions.h       # AST-building and source-span API
 ├── src/
 │   ├── cli/main.c               # Debug/demo CLI
-│   ├── grammar/                 # Future grammar loader split
-│   ├── lr1/                     # Table builder and parser runtime
-│   ├── runtime/                 # Future runtime split
-│   └── support/                 # Shared helpers
-├── tests/fixtures/grammars/     # Sample grammars
-└── legacy/old_lr1_table/        # Previous prototype, not built by default
+│   └── lr1/                     # Table builder and parser runtime
+└── tests/fixtures/grammars/     # Sample grammars
 ```
 
 ## Build
