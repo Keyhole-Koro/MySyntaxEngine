@@ -1,3 +1,5 @@
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -138,6 +140,58 @@ static void test_invalid_terminal_is_reported(SyntaxTable *table) {
     syntax_action_result_free(&result);
 }
 
+/* Parse `first bad` through both entry points: each must stop at `bad` with
+   the same diagnostic instead of looking `bad` up in the table. */
+static void expect_rejected_after(SyntaxTable *table, int first, int bad) {
+    int token_ids[] = {first, bad};
+    SyntaxResult syntax = syntax_parse_token_ids(table, token_ids, 2);
+    CHECK(syntax.status == SYNTAX_ERROR, "token-id parse must reject a non-terminal id");
+    CHECK(syntax.token_index == 1, "token-id parse must stop at the rejected id");
+    CHECK(syntax.expected_count > 0, "token-id rejection must report expectations");
+
+    SyntaxInputToken tokens[] = {
+        {.terminal_id = first, .lexeme = "item", .lexeme_length = 4,
+         .span = span(0, 4, 1, 1, 1, 5), .value = NULL},
+        {.terminal_id = bad, .lexeme = "?", .lexeme_length = 1,
+         .span = span(5, 6, 1, 6, 1, 7), .value = NULL},
+    };
+    SyntaxActionResult actions = syntax_parse_with_actions(table, tokens, 2, NULL);
+    CHECK(actions.syntax.status == syntax.status, "both parsers must reject the id");
+    CHECK(actions.syntax.token_index == syntax.token_index, "both parsers must stop at the id");
+    CHECK(actions.syntax.state == syntax.state, "both parsers must stop in the same state");
+    CHECK(actions.syntax.expected_count == syntax.expected_count, "both parsers must expect the same");
+    for (size_t i = 0; i < syntax.expected_count; ++i) {
+        CHECK(strcmp(actions.syntax.expected[i], syntax.expected[i]) == 0,
+              "both parsers must expect the same terminals");
+    }
+    syntax_action_result_free(&actions);
+    syntax_result_free(&syntax);
+}
+
+static void test_non_terminal_ids_are_rejected(SyntaxGrammar *grammar, SyntaxTable *table) {
+    puts("test: non-terminal token ids are rejected");
+    fflush(stdout);
+    const char *names[] = {"$", ";", "id", "num"};
+    int terminals[sizeof(names) / sizeof(names[0])];
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        terminals[i] = syntax_terminal_id(grammar, names[i]);
+        CHECK(terminals[i] >= 0, "fixture terminal must exist");
+    }
+
+    /* The table has no column for an id past the grammar's last symbol. */
+    expect_rejected_after(table, terminals[2], INT_MAX);
+
+    /* Every other small id is one of the fixture's nonterminals or lies past
+       its last symbol. */
+    for (int bad = -1; bad < 64; ++bad) {
+        bool terminal = false;
+        for (size_t i = 0; i < sizeof(terminals) / sizeof(terminals[0]); ++i) {
+            if (terminals[i] == bad) terminal = true;
+        }
+        if (!terminal) expect_rejected_after(table, terminals[2], bad);
+    }
+}
+
 int main(void) {
     const char *fixture = "tests/fixtures/grammars/semantic_actions.txt";
     SyntaxGrammar *grammar = syntax_load_grammar(fixture);
@@ -149,6 +203,7 @@ int main(void) {
     test_success_returns_root_and_combined_span(grammar, table);
     test_error_destroys_shifted_values(grammar, table);
     test_invalid_terminal_is_reported(table);
+    test_non_terminal_ids_are_rejected(grammar, table);
 
     syntax_free_table(table);
     syntax_free_grammar(grammar);

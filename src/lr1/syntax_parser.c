@@ -101,7 +101,8 @@ SyntaxResult syntax_parse_token_ids_ex(
         int lookahead = grammar->eof_symbol;
         if (index < token_count) {
             lookahead = token_ids[index];
-            if (lookahead < 0) {
+            if (lookahead < 0 || lookahead >= grammar->symbol_count ||
+                !lr1_symbol_is_terminal(grammar, lookahead)) {
                 result.status = SYNTAX_ERROR;
                 result.token_index = index;
                 fill_expected(table, &result, state);
