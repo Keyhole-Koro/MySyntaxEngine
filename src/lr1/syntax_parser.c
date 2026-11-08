@@ -23,6 +23,16 @@ static void fill_expected(const SyntaxTable *table, SyntaxResult *result, int st
     }
 }
 
+/* A parse that stops at input token `index` in `state`, with the terminals
+   that state would have accepted. */
+static SyntaxResult fail_at(const SyntaxTable *table, SyntaxStatus status, size_t index, int state) {
+    SyntaxResult result = {0};
+    result.status = status;
+    result.token_index = index;
+    fill_expected(table, &result, state);
+    return result;
+}
+
 SyntaxResult syntax_parse_token_names(
     SyntaxTable *table,
     const char **token_names,
@@ -34,13 +44,8 @@ SyntaxResult syntax_parse_token_names(
     for (size_t i = 0; i < token_count; i++) {
         token_ids[i] = find_terminal(grammar, token_names[i]);
         if (token_ids[i] < 0) {
-            SyntaxResult result = {0};
-            result.status = SYNTAX_ERROR;
-            result.token_index = i;
-            result.state = 0;
-            fill_expected(table, &result, 0);
             free(token_ids);
-            return result;
+            return fail_at(table, SYNTAX_ERROR, i, 0);
         }
     }
 
@@ -52,6 +57,218 @@ SyntaxResult syntax_parse_token_names(
 const char *syntax_label_name(const SyntaxTable *table, int label_id) {
     return lr1_label_name(table->grammar, label_id);
 }
+
+/* The LR stack. Beside each state it keeps the input token where the symbol
+   the entry stands for starts and, for a parse with data of its own,
+   `data_size` bytes of that data. Entry 0 holds the start state and stands
+   for no symbol. */
+typedef struct {
+    int *states;
+    int *starts;
+    char *data;
+    size_t data_size;
+    int len;
+    int cap;
+} ParseStack;
+
+static ParseStack stack_new(size_t data_size) {
+    ParseStack stack;
+    stack.cap = 128;
+    stack.len = 1;
+    stack.data_size = data_size;
+    stack.states = lr1_xcalloc((size_t)stack.cap, sizeof(int));
+    stack.starts = lr1_xcalloc((size_t)stack.cap, sizeof(int));
+    stack.data = data_size ? lr1_xcalloc((size_t)stack.cap, data_size) : NULL;
+    stack.states[0] = 0;
+    stack.starts[0] = -1;
+    return stack;
+}
+
+static void *stack_data(const ParseStack *stack, int entry) {
+    return stack->data + (size_t)entry * stack->data_size;
+}
+
+static void stack_grow(ParseStack *stack) {
+    stack->cap *= 2;
+    stack->states = lr1_xrealloc(stack->states, (size_t)stack->cap * sizeof(int));
+    stack->starts = lr1_xrealloc(stack->starts, (size_t)stack->cap * sizeof(int));
+    if (stack->data) {
+        stack->data = lr1_xrealloc(stack->data, (size_t)stack->cap * stack->data_size);
+    }
+}
+
+static void stack_free(ParseStack *stack) {
+    free(stack->states);
+    free(stack->starts);
+    free(stack->data);
+}
+
+/* What a parse adds to the LR driver. Any hook may be NULL. */
+typedef struct {
+    /* Bytes of data the parse keeps per stack entry, or 0; the next four
+       hooks look after that data. */
+    size_t data_size;
+    /* Fill `data` for `terminal`, just shifted from input token `index`
+       (index >= token_count when the grammar shifts the end of input). */
+    void (*shift)(void *ctx, void *data, int terminal, size_t index);
+    /* Reduce by production `production_id` in place: `data` holds the data of
+       the production's right-hand side, which leaves the stack after this
+       call; write the left-hand side's data over its first entry (the free
+       entry at `data`, for an empty right-hand side). `index` is the
+       lookahead token. */
+    void (*reduce)(void *ctx, int production_id, void *data, size_t index);
+    /* Take over the data of the accepted start symbol. */
+    void (*accept)(void *ctx, void *data);
+    /* Release data still on the stack when the parse ends, and the data of a
+       reduced left-hand side that has no goto. */
+    void (*discard)(void *ctx, void *data);
+    /* Apply the @role/@decl annotations of a production being reduced:
+       `starts` holds the input token each right-hand-side symbol starts at,
+       `index` is the lookahead token, and `scope_depth` is how many %scope
+       openers the input shifted so far has left open. */
+    void (*annotate)(void *ctx, const Production *production, const int *starts,
+                     size_t index, int scope_depth);
+} ParseHooks;
+
+/* The terminal at input token `index`: the end of input past the last token,
+   or -1 when the token's id is not one of the grammar's terminals. */
+static int lookahead_at(const SyntaxGrammar *grammar, const int *token_ids, size_t token_count,
+                        size_t index) {
+    if (index >= token_count) return grammar->eof_symbol;
+    int id = token_ids[index];
+    if (id < 0 || id >= grammar->symbol_count || !lr1_symbol_is_terminal(grammar, id)) return -1;
+    return id;
+}
+
+/* The LR(1) driver behind every parse: run `token_ids` through the table. The
+   driver tracks what the grammar's annotations need -- where each stack
+   symbol starts, and the %scope depth -- and `hooks` keep any data of the
+   parse's own. */
+static SyntaxResult lr_parse(
+    const SyntaxTable *table,
+    const int *token_ids,
+    size_t token_count,
+    const ParseHooks *hooks,
+    void *ctx
+) {
+    const SyntaxGrammar *grammar = table->grammar;
+    ParseStack stack = stack_new(hooks->data_size);
+    int scope_depth = 0;
+    SyntaxResult result;
+
+    int state = stack.states[0];  /* the state on top of the stack */
+    size_t index = 0;
+    int lookahead = lookahead_at(grammar, token_ids, token_count, index);
+    for (;;) {
+        if (lookahead < 0) {
+            result = fail_at(table, SYNTAX_ERROR, index, state);
+            break;
+        }
+
+        ActionCell action = table->actions[state][lookahead];
+        if (action.kind == ACTION_NONE) {
+            SyntaxStatus status = (lookahead == grammar->eof_symbol) ? SYNTAX_INCOMPLETE : SYNTAX_ERROR;
+            result = fail_at(table, status, index, state);
+            break;
+        }
+
+        if (action.kind == ACTION_ACCEPT) {
+            result = (SyntaxResult){.status = SYNTAX_OK, .token_index = index, .state = state};
+            if (hooks->accept && stack.len > 1) hooks->accept(ctx, stack_data(&stack, stack.len - 1));
+            break;
+        }
+
+        /* Either action may take a new entry: a shift always does, and so does
+           the left-hand side of an empty right-hand side. */
+        if (stack.len == stack.cap) stack_grow(&stack);
+
+        if (action.kind == ACTION_SHIFT) {
+            if (lookahead == grammar->scope_open) scope_depth++;
+            else if (lookahead == grammar->scope_close && scope_depth > 0) scope_depth--;
+            stack.starts[stack.len] = (int)index;
+            if (hooks->shift) hooks->shift(ctx, stack_data(&stack, stack.len), lookahead, index);
+            state = action.value;
+            stack.states[stack.len++] = state;
+            lookahead = lookahead_at(grammar, token_ids, token_count, ++index);
+            continue;
+        }
+
+        const Production *production = &grammar->productions[action.value];
+        if (production->rhs_len >= stack.len) {
+            result = fail_at(table, SYNTAX_ERROR, index, state);
+            break;
+        }
+
+        int rhs_base = stack.len - production->rhs_len;
+        if (production->annot && hooks->annotate) {
+            hooks->annotate(ctx, production, &stack.starts[rhs_base], index, scope_depth);
+        }
+        /* The left-hand side starts where its first symbol does, or at the
+           lookahead when it has none. */
+        int start = (production->rhs_len > 0) ? stack.starts[rhs_base] : (int)index;
+        if (hooks->reduce) hooks->reduce(ctx, action.value, stack_data(&stack, rhs_base), index);
+        stack.len = rhs_base;
+
+        int goto_from = stack.states[rhs_base - 1];
+        int goto_state = table->gotos[goto_from][production->lhs];
+        if (goto_state < 0) {
+            if (hooks->discard) hooks->discard(ctx, stack_data(&stack, rhs_base));
+            result = fail_at(table, SYNTAX_ERROR, index, goto_from);
+            break;
+        }
+        state = goto_state;
+        stack.starts[stack.len] = start;
+        stack.states[stack.len++] = state;
+    }
+
+    for (int i = 1; hooks->discard && i < stack.len; i++) {
+        hooks->discard(ctx, stack_data(&stack, i));
+    }
+    stack_free(&stack);
+    return result;
+}
+
+/* A syntax-only parse, which applies the grammar's @role and @decl annotations
+   to the caller's buffers as it reduces. */
+typedef struct {
+    size_t token_count;
+    int *out_roles;
+    SyntaxSymbol *out_symbols;
+    size_t symbol_cap;
+    size_t *out_symbol_count;
+} TokenParse;
+
+static void token_annotate(void *ctx, const Production *production, const int *starts,
+                           size_t index, int scope_depth) {
+    TokenParse *parse = ctx;
+    for (int j = 0; j < production->rhs_len; j++) {
+        const RhsAnnot *a = &production->annot[j];
+        if (!a->role && !a->decl) continue;
+        int tok = starts[j];
+        if (tok < 0 || (size_t)tok >= parse->token_count) continue;
+
+        if (a->role && parse->out_roles) {
+            bool ok = true;
+            if (a->single) {
+                int next = (j + 1 < production->rhs_len) ? starts[j + 1] : (int)index;
+                ok = (next - tok == 1);
+            }
+            if (ok) parse->out_roles[tok] = a->role;
+        }
+        /* A declaration is top-level (outline symbol) iff it reduces at scope
+           depth 0, which separates globals from locals and struct fields. */
+        if (a->decl && parse->out_symbols && parse->out_symbol_count &&
+            *parse->out_symbol_count < parse->symbol_cap && scope_depth == 0) {
+            parse->out_symbols[*parse->out_symbol_count].token_index = tok;
+            parse->out_symbols[*parse->out_symbol_count].kind = a->decl;
+            (*parse->out_symbol_count)++;
+        }
+    }
+}
+
+static const ParseHooks token_hooks = {
+    .annotate = token_annotate,
+};
 
 SyntaxResult syntax_parse_token_ids(
     SyntaxTable *table,
@@ -79,127 +296,15 @@ SyntaxResult syntax_parse_token_ids_ex(
     size_t symbol_cap,
     size_t *out_symbol_count
 ) {
-    SyntaxResult result = {0};
-    result.status = SYNTAX_ERROR;
-    const SyntaxGrammar *grammar = table->grammar;
     if (out_symbol_count) *out_symbol_count = 0;
-    /* Brace nesting: a declaration is top-level (outline symbol) iff it reduces
-       at depth 0, which separates globals from locals and struct fields. */
-    int brace_depth = 0;
-
-    int stack_cap = 128;
-    int stack_len = 1;
-    int *stack = lr1_xcalloc((size_t)stack_cap, sizeof(int));
-    /* Parallel stack: leftmost input-token index each stack symbol derives. */
-    int *pos_stack = lr1_xcalloc((size_t)stack_cap, sizeof(int));
-    stack[0] = 0;
-    pos_stack[0] = -1;
-
-    size_t index = 0;
-    for (;;) {
-        int state = stack[stack_len - 1];
-        int lookahead = grammar->eof_symbol;
-        if (index < token_count) {
-            lookahead = token_ids[index];
-            if (lookahead < 0 || lookahead >= grammar->symbol_count ||
-                !lr1_symbol_is_terminal(grammar, lookahead)) {
-                result.status = SYNTAX_ERROR;
-                result.token_index = index;
-                fill_expected(table, &result, state);
-                break;
-            }
-        }
-
-        ActionCell action = table->actions[state][lookahead];
-        if (action.kind == ACTION_NONE) {
-            result.status = (lookahead == grammar->eof_symbol) ? SYNTAX_INCOMPLETE : SYNTAX_ERROR;
-            result.token_index = index;
-            fill_expected(table, &result, state);
-            break;
-        }
-
-        if (action.kind == ACTION_ACCEPT) {
-            result.status = SYNTAX_OK;
-            result.token_index = index;
-            result.state = state;
-            break;
-        }
-
-        if (action.kind == ACTION_SHIFT) {
-            if (lookahead == grammar->scope_open) brace_depth++;
-            else if (lookahead == grammar->scope_close && brace_depth > 0) brace_depth--;
-            if (stack_len == stack_cap) {
-                stack_cap *= 2;
-                stack = lr1_xrealloc(stack, (size_t)stack_cap * sizeof(int));
-                pos_stack = lr1_xrealloc(pos_stack, (size_t)stack_cap * sizeof(int));
-            }
-            pos_stack[stack_len] = (int)index;
-            stack[stack_len++] = action.value;
-            index++;
-            continue;
-        }
-
-        if (action.kind == ACTION_REDUCE) {
-            const Production *production = &grammar->productions[action.value];
-            if (production->rhs_len >= stack_len) {
-                result.status = SYNTAX_ERROR;
-                result.token_index = index;
-                fill_expected(table, &result, state);
-                break;
-            }
-
-            int rhs_base = stack_len - production->rhs_len;
-
-            if (production->annot) {
-                for (int j = 0; j < production->rhs_len; j++) {
-                    const RhsAnnot *a = &production->annot[j];
-                    if (!a->role && !a->decl) continue;
-                    int tok = pos_stack[rhs_base + j];
-                    if (tok < 0 || (size_t)tok >= token_count) continue;
-
-                    if (a->role && out_roles) {
-                        bool ok = true;
-                        if (a->single) {
-                            int next = (j + 1 < production->rhs_len)
-                                       ? pos_stack[rhs_base + j + 1] : (int)index;
-                            ok = (next - tok == 1);
-                        }
-                        if (ok) out_roles[tok] = a->role;
-                    }
-                    if (a->decl && out_symbols && out_symbol_count &&
-                        *out_symbol_count < symbol_cap && brace_depth == 0) {
-                        out_symbols[*out_symbol_count].token_index = tok;
-                        out_symbols[*out_symbol_count].kind = a->decl;
-                        (*out_symbol_count)++;
-                    }
-                }
-            }
-
-            int lhs_pos = (production->rhs_len > 0) ? pos_stack[rhs_base] : (int)index;
-            stack_len -= production->rhs_len;
-            int goto_from = stack[stack_len - 1];
-            int goto_state = table->gotos[goto_from][production->lhs];
-            if (goto_state < 0) {
-                result.status = SYNTAX_ERROR;
-                result.token_index = index;
-                fill_expected(table, &result, goto_from);
-                break;
-            }
-
-            if (stack_len == stack_cap) {
-                stack_cap *= 2;
-                stack = lr1_xrealloc(stack, (size_t)stack_cap * sizeof(int));
-                pos_stack = lr1_xrealloc(pos_stack, (size_t)stack_cap * sizeof(int));
-            }
-            pos_stack[stack_len] = lhs_pos;
-            stack[stack_len++] = goto_state;
-            continue;
-        }
-    }
-
-    free(stack);
-    free(pos_stack);
-    return result;
+    TokenParse parse = {
+        .token_count = token_count,
+        .out_roles = out_roles,
+        .out_symbols = out_symbols,
+        .symbol_cap = symbol_cap,
+        .out_symbol_count = out_symbol_count,
+    };
+    return lr_parse(table, token_ids, token_count, &token_hooks, &parse);
 }
 
 static SyntaxSourceSpan zero_width_span(const SyntaxInputToken *tokens, size_t token_count, size_t index) {
@@ -222,19 +327,86 @@ static SyntaxSourceSpan zero_width_span(const SyntaxInputToken *tokens, size_t t
     return span;
 }
 
-static void destroy_semantic_stack(
-    SyntaxSemanticValue *values,
-    int stack_len,
-    const SyntaxActionSet *actions
-) {
-    if (!actions || !actions->destroy) return;
-    for (int i = 1; i < stack_len; ++i) {
-        if (values[i].value) {
-            actions->destroy(values[i].symbol_id, values[i].value, actions->user_data);
-            values[i].value = NULL;
-        }
+/* A parse that builds the caller's semantic values. The data of a stack entry
+   is its symbol's SyntaxSemanticValue, which the parse owns while it is on
+   the stack. */
+typedef struct {
+    const SyntaxGrammar *grammar;
+    const SyntaxInputToken *tokens;
+    size_t token_count;
+    const SyntaxActionSet *actions;
+    SyntaxActionResult *result;
+} ActionParse;
+
+static void action_shift(void *ctx, void *data, int terminal, size_t index) {
+    const ActionParse *parse = ctx;
+    SyntaxSemanticValue *value = data;
+    value->symbol_id = terminal;
+    if (index < parse->token_count) {
+        value->value = parse->tokens[index].value;
+        value->span = parse->tokens[index].span;
+    } else {
+        value->value = NULL;
+        value->span = zero_width_span(parse->tokens, parse->token_count, index);
     }
 }
+
+static void action_reduce(void *ctx, int production_id, void *data, size_t index) {
+    const ActionParse *parse = ctx;
+    const Production *production = &parse->grammar->productions[production_id];
+    SyntaxSemanticValue *rhs = data;
+
+    SyntaxSourceSpan span = zero_width_span(parse->tokens, parse->token_count, index);
+    if (production->rhs_len > 0) {
+        span = rhs[0].span;
+        span.byte_end = rhs[production->rhs_len - 1].span.byte_end;
+        span.line_end = rhs[production->rhs_len - 1].span.line_end;
+        span.column_end = rhs[production->rhs_len - 1].span.column_end;
+    }
+
+    SyntaxReduceEvent event;
+    event.production_id = production_id;
+    event.lhs_symbol_id = production->lhs;
+    event.rhs = production->rhs_len > 0 ? rhs : NULL;
+    event.rhs_count = (size_t)production->rhs_len;
+    event.span = span;
+
+    void *lhs_value = NULL;
+    if (parse->actions && parse->actions->reduce) {
+        lhs_value = parse->actions->reduce(&event, parse->actions->user_data);
+    }
+
+    /* The callback owns the right-hand side's values now. */
+    rhs[0].symbol_id = production->lhs;
+    rhs[0].value = lhs_value;
+    rhs[0].span = span;
+}
+
+static void action_accept(void *ctx, void *data) {
+    const ActionParse *parse = ctx;
+    SyntaxSemanticValue *root = data;
+    /* Ownership of the root passes to the caller. */
+    parse->result->root = root->value;
+    parse->result->root_span = root->span;
+    root->value = NULL;
+}
+
+static void action_discard(void *ctx, void *data) {
+    const ActionParse *parse = ctx;
+    SyntaxSemanticValue *value = data;
+    if (value->value && parse->actions && parse->actions->destroy) {
+        parse->actions->destroy(value->symbol_id, value->value, parse->actions->user_data);
+        value->value = NULL;
+    }
+}
+
+static const ParseHooks action_hooks = {
+    .data_size = sizeof(SyntaxSemanticValue),
+    .shift = action_shift,
+    .reduce = action_reduce,
+    .accept = action_accept,
+    .discard = action_discard,
+};
 
 SyntaxActionResult syntax_parse_with_actions(
     SyntaxTable *table,
@@ -250,129 +422,18 @@ SyntaxActionResult syntax_parse_with_actions(
         return result;
     }
 
-    const SyntaxGrammar *grammar = table->grammar;
-    int stack_cap = 128;
-    int stack_len = 1;
-    int *states = lr1_xcalloc((size_t)stack_cap, sizeof(int));
-    SyntaxSemanticValue *values = lr1_xcalloc((size_t)stack_cap, sizeof(SyntaxSemanticValue));
-    states[0] = 0;
+    int *token_ids = lr1_xcalloc(token_count ? token_count : 1, sizeof(int));
+    for (size_t i = 0; i < token_count; i++) token_ids[i] = tokens[i].terminal_id;
 
-    size_t index = 0;
-    for (;;) {
-        int state = states[stack_len - 1];
-        int lookahead = grammar->eof_symbol;
-        if (index < token_count) {
-            lookahead = tokens[index].terminal_id;
-            if (lookahead < 0 || lookahead >= grammar->symbol_count ||
-                !lr1_symbol_is_terminal(grammar, lookahead)) {
-                result.syntax.status = SYNTAX_ERROR;
-                result.syntax.token_index = index;
-                fill_expected(table, &result.syntax, state);
-                break;
-            }
-        }
-
-        ActionCell action = table->actions[state][lookahead];
-        if (action.kind == ACTION_NONE) {
-            result.syntax.status = (lookahead == grammar->eof_symbol)
-                ? SYNTAX_INCOMPLETE : SYNTAX_ERROR;
-            result.syntax.token_index = index;
-            fill_expected(table, &result.syntax, state);
-            break;
-        }
-
-        if (action.kind == ACTION_ACCEPT) {
-            result.syntax.status = SYNTAX_OK;
-            result.syntax.token_index = index;
-            result.syntax.state = state;
-            if (stack_len > 1) {
-                result.root = values[stack_len - 1].value;
-                result.root_span = values[stack_len - 1].span;
-                values[stack_len - 1].value = NULL;
-            }
-            break;
-        }
-
-        if (action.kind == ACTION_SHIFT) {
-            if (stack_len == stack_cap) {
-                stack_cap *= 2;
-                states = lr1_xrealloc(states, (size_t)stack_cap * sizeof(int));
-                values = lr1_xrealloc(values, (size_t)stack_cap * sizeof(SyntaxSemanticValue));
-            }
-            states[stack_len] = action.value;
-            values[stack_len].symbol_id = lookahead;
-            if (index < token_count) {
-                values[stack_len].value = tokens[index].value;
-                values[stack_len].span = tokens[index].span;
-            } else {
-                values[stack_len].value = NULL;
-                values[stack_len].span = zero_width_span(tokens, token_count, index);
-            }
-            stack_len++;
-            index++;
-            continue;
-        }
-
-        if (action.kind == ACTION_REDUCE) {
-            const Production *production = &grammar->productions[action.value];
-            if (production->rhs_len >= stack_len) {
-                result.syntax.status = SYNTAX_ERROR;
-                result.syntax.token_index = index;
-                fill_expected(table, &result.syntax, state);
-                break;
-            }
-
-            int rhs_base = stack_len - production->rhs_len;
-            SyntaxSourceSpan span = zero_width_span(tokens, token_count, index);
-            if (production->rhs_len > 0) {
-                span = values[rhs_base].span;
-                span.byte_end = values[stack_len - 1].span.byte_end;
-                span.line_end = values[stack_len - 1].span.line_end;
-                span.column_end = values[stack_len - 1].span.column_end;
-            }
-
-            SyntaxReduceEvent event;
-            event.production_id = action.value;
-            event.lhs_symbol_id = production->lhs;
-            event.rhs = production->rhs_len > 0 ? &values[rhs_base] : NULL;
-            event.rhs_count = (size_t)production->rhs_len;
-            event.span = span;
-
-            void *lhs_value = NULL;
-            if (actions && actions->reduce) {
-                lhs_value = actions->reduce(&event, actions->user_data);
-            }
-
-            stack_len -= production->rhs_len;
-            int goto_from = states[stack_len - 1];
-            int goto_state = table->gotos[goto_from][production->lhs];
-            if (goto_state < 0) {
-                if (lhs_value && actions && actions->destroy) {
-                    actions->destroy(production->lhs, lhs_value, actions->user_data);
-                }
-                result.syntax.status = SYNTAX_ERROR;
-                result.syntax.token_index = index;
-                fill_expected(table, &result.syntax, goto_from);
-                break;
-            }
-
-            if (stack_len == stack_cap) {
-                stack_cap *= 2;
-                states = lr1_xrealloc(states, (size_t)stack_cap * sizeof(int));
-                values = lr1_xrealloc(values, (size_t)stack_cap * sizeof(SyntaxSemanticValue));
-            }
-            states[stack_len] = goto_state;
-            values[stack_len].symbol_id = production->lhs;
-            values[stack_len].value = lhs_value;
-            values[stack_len].span = span;
-            stack_len++;
-            continue;
-        }
-    }
-
-    destroy_semantic_stack(values, stack_len, actions);
-    free(states);
-    free(values);
+    ActionParse parse = {
+        .grammar = table->grammar,
+        .tokens = tokens,
+        .token_count = token_count,
+        .actions = actions,
+        .result = &result,
+    };
+    result.syntax = lr_parse(table, token_ids, token_count, &action_hooks, &parse);
+    free(token_ids);
     return result;
 }
 
