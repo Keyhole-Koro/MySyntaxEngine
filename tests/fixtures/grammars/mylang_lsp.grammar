@@ -6,7 +6,7 @@ program     : topList $
 topList     : topList top
             | top
 
-top         : packageDecl
+top         : namespaceDecl
             | importDecl
             | exportDecl
             | externDecl
@@ -50,7 +50,10 @@ literal     : 'NUMBER'
             | 'TRUE_LITERAL'
             | 'FALSE_LITERAL'
 
-packageDecl : 'PACKAGE' namespaceName 'SEMICOLON'
+// `namespace dom;` -- one name, no nesting. Several files may declare the
+// same namespace. `package` is the legacy spelling.
+namespaceDecl: 'NAMESPACE' namespaceName 'SEMICOLON'
+             | 'PACKAGE' namespaceName 'SEMICOLON'
 
 importDecl  : 'IMPORT' namespaceName 'SEMICOLON'
             | 'IMPORT' namespaceName 'FROM' 'STRING_LITERAL' 'SEMICOLON'
