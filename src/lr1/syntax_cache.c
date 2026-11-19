@@ -123,8 +123,37 @@ int syntax_save_lr1_table(const SyntaxTable *table, const char *path) {
         }
     }
 
-    fclose(file);
+    /* A buffered write can still fail when the file is closed. */
+    if (fclose(file) != 0) ok = false;
     return ok ? 1 : 0;
+}
+
+/* Bytes between the read position and the end of `file`, or -1. */
+static long bytes_left(FILE *file) {
+    long position = ftell(file);
+    if (position < 0 || fseek(file, 0, SEEK_END) != 0) return -1;
+    long end = ftell(file);
+    if (end < position || fseek(file, position, SEEK_SET) != 0) return -1;
+    return end - position;
+}
+
+/* Whether a cached action points only at states and productions that exist.
+   The builder only puts actions on terminals. */
+static bool action_is_valid(const SyntaxGrammar *grammar, int symbol, int kind, int value,
+                            int state_count) {
+    switch (kind) {
+        case ACTION_NONE:
+            return true;
+        case ACTION_SHIFT:
+            return lr1_symbol_is_terminal(grammar, symbol) && value >= 0 && value < state_count;
+        case ACTION_REDUCE:
+            return lr1_symbol_is_terminal(grammar, symbol) && value >= 0 &&
+                value < grammar->production_count;
+        case ACTION_ACCEPT:
+            return symbol == grammar->eof_symbol;
+        default:
+            return false;
+    }
 }
 
 SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path) {
@@ -144,7 +173,16 @@ SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path) {
     if (ok) {
         ok = read_int(file, &state_count) &&
             read_int(file, &conflict_count) &&
-            state_count > 0;
+            state_count > 0 &&
+            conflict_count >= 0;
+    }
+    /* Each state is one row of actions (kind, value) and one of gotos, so a
+       state count the rest of the file cannot hold is rejected before the
+       rows are allocated. */
+    if (ok) {
+        long left = bytes_left(file);
+        long row_bytes = (long)grammar->symbol_count * 3 * (long)sizeof(int);
+        ok = left >= 0 && row_bytes > 0 && state_count <= left / row_bytes;
     }
 
     SyntaxTable *table = NULL;
@@ -163,13 +201,15 @@ SyntaxTable *syntax_load_lr1_table(SyntaxGrammar *grammar, const char *path) {
             for (int symbol = 0; ok && symbol < grammar->symbol_count; symbol++) {
                 int kind = 0;
                 int value = 0;
-                ok = read_int(file, &kind) && read_int(file, &value);
-                if (ok && (kind < ACTION_NONE || kind > ACTION_ACCEPT)) ok = false;
+                ok = read_int(file, &kind) && read_int(file, &value) &&
+                    action_is_valid(grammar, symbol, kind, value, state_count);
                 table->actions[state][symbol].kind = (ActionKind)kind;
                 table->actions[state][symbol].value = value;
             }
             for (int symbol = 0; ok && symbol < grammar->symbol_count; symbol++) {
-                ok = read_int(file, &table->gotos[state][symbol]);
+                int goto_state = 0;
+                ok = read_int(file, &goto_state) && goto_state >= -1 && goto_state < state_count;
+                table->gotos[state][symbol] = goto_state;
             }
         }
     }
