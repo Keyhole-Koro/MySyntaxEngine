@@ -45,6 +45,18 @@ static void print_action(const SyntaxGrammar *grammar, ActionCell action) {
     }
 }
 
+/* One LR(1) item on its own line: `lhs -> rhs` with a dot, and its lookahead. */
+static void print_item(const SyntaxGrammar *grammar, LR1Item item, const char *indent) {
+    const Production *production = &grammar->productions[item.production];
+    printf("%s%s ->", indent, grammar->symbols[production->lhs].name);
+    for (int i = 0; i < production->rhs_len; i++) {
+        if (i == item.dot) printf(" .");
+        printf(" %s", grammar->symbols[production->rhs[i]].name);
+    }
+    if (item.dot == production->rhs_len) printf(" .");
+    printf(", %s\n", grammar->symbols[item.lookahead].name);
+}
+
 void syntax_print_table(const SyntaxTable *table) {
     const SyntaxGrammar *grammar = table->grammar;
     printf("states: %d\n", table->state_count);
@@ -56,15 +68,7 @@ void syntax_print_table(const SyntaxTable *table) {
     for (int state = 0; state < table->state_count; state++) {
         printf("state %d\n", state);
         for (int item_index = 0; item_index < table->states[state].count; item_index++) {
-            LR1Item item = table->states[state].items[item_index];
-            const Production *production = &grammar->productions[item.production];
-            printf("  %s ->", grammar->symbols[production->lhs].name);
-            for (int i = 0; i < production->rhs_len; i++) {
-                if (i == item.dot) printf(" .");
-                printf(" %s", grammar->symbols[production->rhs[i]].name);
-            }
-            if (item.dot == production->rhs_len) printf(" .");
-            printf(", %s\n", grammar->symbols[item.lookahead].name);
+            print_item(grammar, table->states[state].items[item_index], "  ");
         }
     }
 }
@@ -92,15 +96,7 @@ void syntax_print_conflicts(const SyntaxTable *table) {
         if (table->states) {
             printf("  state items:\n");
             for (int item_index = 0; item_index < table->states[conflict->state].count; item_index++) {
-                LR1Item item = table->states[conflict->state].items[item_index];
-                const Production *production = &grammar->productions[item.production];
-                printf("    %s ->", grammar->symbols[production->lhs].name);
-                for (int rhs_index = 0; rhs_index < production->rhs_len; rhs_index++) {
-                    if (rhs_index == item.dot) printf(" .");
-                    printf(" %s", grammar->symbols[production->rhs[rhs_index]].name);
-                }
-                if (item.dot == production->rhs_len) printf(" .");
-                printf(", %s\n", grammar->symbols[item.lookahead].name);
+                print_item(grammar, table->states[conflict->state].items[item_index], "    ");
             }
         } else {
             printf("  state items: unavailable for cached table\n");
