@@ -101,6 +101,14 @@ static void test_line_length(void) {
     expect_rejected(too_long, "a 1024-character line must not load");
     free(too_long);
 
+    char *too_long_crlf = padded("S : 'a' $ //", 'x', 1024, "\r\n");
+    expect_rejected(too_long_crlf, "a 1024-character line ending in CRLF must not load");
+    free(too_long_crlf);
+
+    char *too_long_at_eof = padded("S : 'a' $ //", 'x', 1024, "");
+    expect_rejected(too_long_at_eof, "a 1024-character last line must not load");
+    free(too_long_at_eof);
+
     /* What was cut off used to be read as a line of its own. */
     char *split_rule = padded("S : 'a' $ //", 'x', 1030, " : 'b' $\n");
     expect_rejected(split_rule, "the tail of a long line must not become a rule");

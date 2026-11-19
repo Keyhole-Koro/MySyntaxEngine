@@ -217,14 +217,17 @@ static bool is_directive(const char *text, const char *name) {
         (text[len + 1] == '\0' || text[len + 1] == ' ' || text[len + 1] == '\t');
 }
 
-/* Whether the line fgets just read into `line` (`cap` bytes) goes on past
-   what fit. A full buffer can still hold a whole line that ends right there. */
-static bool line_overflows(FILE *file, const char *line, size_t cap) {
+#define GRAMMAR_LINE_MAX 1023
+
+/* Whether the line fgets read into `line` (`cap` bytes, room for the longest
+   line and a CRLF) is longer than GRAMMAR_LINE_MAX, not counting its line
+   ending. A full buffer without a newline means fgets stopped mid-line. */
+static bool line_too_long(const char *line, size_t cap) {
     size_t len = strlen(line);
-    if (len < cap - 1 || line[len - 1] == '\n') return false;
-    int c = fgetc(file);
-    if (c == '\r') c = fgetc(file);
-    return c != EOF && c != '\n';
+    if (len == cap - 1 && line[len - 1] != '\n') return true;
+    if (len > 0 && line[len - 1] == '\n') len--;
+    if (len > 0 && line[len - 1] == '\r') len--;
+    return len > GRAMMAR_LINE_MAX;
 }
 
 /* Add the rules and directives of the grammar file at `path` to `grammar`.
@@ -236,12 +239,12 @@ static bool load_grammar_file(SyntaxGrammar *grammar, const char *path) {
         return false;
     }
 
-    char line[1024];
+    char line[GRAMMAR_LINE_MAX + 3];
     int current_lhs = -1;
 
     while (fgets(line, sizeof(line), file)) {
-        if (line_overflows(file, line, sizeof(line))) {
-            fprintf(stderr, "grammar line longer than %zu characters: %s\n", sizeof(line) - 1, path);
+        if (line_too_long(line, sizeof(line))) {
+            fprintf(stderr, "grammar line longer than %d characters: %s\n", GRAMMAR_LINE_MAX, path);
             fclose(file);
             return false;
         }
