@@ -51,9 +51,8 @@ literal     : 'NUMBER'
             | 'FALSE_LITERAL'
 
 // `namespace dom;` -- one name, no nesting. Several files may declare the
-// same namespace. `package` is the legacy spelling.
+// same namespace.
 namespaceDecl: 'NAMESPACE' namespaceName 'SEMICOLON'
-             | 'PACKAGE' namespaceName 'SEMICOLON'
 
 importDecl  : 'IMPORT' namespaceName 'SEMICOLON'
             | 'IMPORT' namespaceName 'FROM' 'STRING_LITERAL' 'SEMICOLON'
@@ -138,19 +137,14 @@ funcDecl    : funcDef
 // axes (type parameters, parameter list) are each independently optional
 // and don't affect tagging, so they're factored into their own nullable
 // nonterminals instead of being crossed by hand.
-// `from` is the import keyword and also From's conversion function, so it is
-// accepted as a function or method name. (A nullable typeParamsOpt after a
-// name nonterminal loses the paramsClause lookahead, hence the spelled-out
-// alternatives.)
+// A function or method may be called `from`, as From's conversion function
+// is: the syntax checker hands the word over as an IDENTIFIER wherever it is
+// not the import keyword.
 funcProto   : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause 'SEMICOLON'
             | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause 'SEMICOLON'
-            | type 'FROM'@function@decl(function) paramsClause 'SEMICOLON'
-            | type recv 'FROM'@method@decl(method) paramsClause 'SEMICOLON'
 
 funcDef     : type 'IDENTIFIER'@function@decl(function) typeParamsOpt paramsClause block
             | type recv 'IDENTIFIER'@method@decl(method) typeParamsOpt paramsClause block
-            | type 'FROM'@function@decl(function) paramsClause block
-            | type recv 'FROM'@method@decl(method) paramsClause block
 
 typeParamsOpt: typeParams
             |
@@ -399,8 +393,6 @@ postfixExpr : primary
             | postfixExpr 'INC'
             | postfixExpr 'DEC'
             | postfixExpr 'DOT' 'IDENTIFIER'@property
-            | postfixExpr 'DOT' 'FROM'@method
-            | postfixExpr 'DOT' 'OF'@method
             | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' 'R_PARENTHESES'
             | postfixExpr 'DOT' 'IDENTIFIER'@function typeArgs 'L_PARENTHESES' argList 'R_PARENTHESES'
             | postfixExpr 'QUESTION'
