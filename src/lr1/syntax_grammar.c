@@ -86,12 +86,21 @@ static void add_production(SyntaxGrammar *grammar, int lhs, const int *rhs,
     }
 }
 
-/* Read a @word into buf (after the '@'); returns chars consumed past p. */
+/* Read a @word into buf (after the '@'); returns chars consumed past p. A
+   word that does not fit stops at cap - 1 chars, followed by a word char. */
 static int read_word(const char *p, char *buf, int cap) {
     int n = 0;
     while (*p && is_word_char(*p) && n < cap - 1) buf[n++] = *p++;
     buf[n] = '\0';
     return n;
+}
+
+static bool reject_long_name(const char *p, int **rhs, RhsAnnot **annot) {
+    if (!is_word_char(*p)) return false;
+    fprintf(stderr, "grammar name longer than 127 characters\n");
+    free(*rhs);
+    free(*annot);
+    return true;
 }
 
 static bool parse_rhs(SyntaxGrammar *grammar, char *text,
@@ -128,6 +137,7 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
             while (*p && is_word_char(*p) && token_len < (int)sizeof(token) - 1) {
                 token[token_len++] = *p++;
             }
+            if (reject_long_name(p, &rhs, &annot)) return false;
         } else {
             free(rhs); free(annot);
             return false;
@@ -145,10 +155,12 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
             p++;
             char tag[128];
             p += read_word(p, tag, (int)sizeof(tag));
+            if (reject_long_name(p, &rhs, &annot)) return false;
             if (strcmp(tag, "decl") == 0 && *p == '(') {
                 p++;
                 char dk[128];
                 p += read_word(p, dk, (int)sizeof(dk));
+                if (reject_long_name(p, &rhs, &annot)) return false;
                 if (*p == ')') p++;
                 a.decl = lr1_intern_label(grammar, dk);
             } else {
@@ -157,6 +169,7 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
                     p++;
                     char mod[128];
                     p += read_word(p, mod, (int)sizeof(mod));
+                    if (reject_long_name(p, &rhs, &annot)) return false;
                     if (strcmp(mod, "single") == 0) a.single = true;
                 }
             }
@@ -169,6 +182,49 @@ static bool parse_rhs(SyntaxGrammar *grammar, char *text,
     *out_annot = annot;
     *out_len = len;
     return true;
+}
+
+/* Cut the next whitespace-separated word off `*cursor`, or return NULL at the
+   end of the text. */
+static char *next_word(char **cursor) {
+    char *p = *cursor;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0') {
+        *cursor = p;
+        return NULL;
+    }
+    char *word = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (*p) *p++ = '\0';
+    *cursor = p;
+    return word;
+}
+
+/* `%scope <open-terminal> <close-terminal>`, with `args` after the name. */
+static bool parse_scope_directive(SyntaxGrammar *grammar, char *args) {
+    char *open = next_word(&args);
+    char *close = next_word(&args);
+    if (!open || !close || next_word(&args)) return false;
+    grammar->scope_open = add_symbol(grammar, open, SYMBOL_TERMINAL);
+    grammar->scope_close = add_symbol(grammar, close, SYMBOL_TERMINAL);
+    return true;
+}
+
+/* Whether `text` is the directive `%name`, alone or followed by blanks. */
+static bool is_directive(const char *text, const char *name) {
+    size_t len = strlen(name);
+    return text[0] == '%' && strncmp(text + 1, name, len) == 0 &&
+        (text[len + 1] == '\0' || text[len + 1] == ' ' || text[len + 1] == '\t');
+}
+
+/* Whether the line fgets just read into `line` (`cap` bytes) goes on past
+   what fit. A full buffer can still hold a whole line that ends right there. */
+static bool line_overflows(FILE *file, const char *line, size_t cap) {
+    size_t len = strlen(line);
+    if (len < cap - 1 || line[len - 1] == '\n') return false;
+    int c = fgetc(file);
+    if (c == '\r') c = fgetc(file);
+    return c != EOF && c != '\n';
 }
 
 /* Add the rules and directives of the grammar file at `path` to `grammar`.
@@ -184,6 +240,11 @@ static bool load_grammar_file(SyntaxGrammar *grammar, const char *path) {
     int current_lhs = -1;
 
     while (fgets(line, sizeof(line), file)) {
+        if (line_overflows(file, line, sizeof(line))) {
+            fprintf(stderr, "grammar line longer than %zu characters: %s\n", sizeof(line) - 1, path);
+            fclose(file);
+            return false;
+        }
         char *text = lr1_trim(line);
         if (*text == '\0') continue;
 
@@ -199,13 +260,13 @@ static bool load_grammar_file(SyntaxGrammar *grammar, const char *path) {
 
         /* Directive: %scope <open-terminal> <close-terminal> or %extend */
         if (text[0] == '%') {
-            char dir[64], arg1[64], arg2[64];
-            if (sscanf(text, "%%%63s %63s %63s", dir, arg1, arg2) >= 2) {
-                if (strcmp(dir, "scope") == 0) {
-                    grammar->scope_open = add_symbol(grammar, arg1, SYMBOL_TERMINAL);
-                    grammar->scope_close = add_symbol(grammar, arg2, SYMBOL_TERMINAL);
-                    continue;
+            if (is_directive(text, "scope")) {
+                if (!parse_scope_directive(grammar, text + 6)) {
+                    fprintf(stderr, "%%scope takes an open and a close terminal: %s\n", path);
+                    fclose(file);
+                    return false;
                 }
+                continue;
             }
             if (strncmp(text, "%extend", 7) == 0) {
                 // transform "%extend Target = Rule" to "Target = Rule"
