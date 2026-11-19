@@ -1,0 +1,9 @@
+// head and tail can each be empty, so a parse reduces them at a lookahead
+// token or at the end of input.
+program : head tail $
+
+head    : 'id'
+        |
+
+tail    : 'num'
+        |

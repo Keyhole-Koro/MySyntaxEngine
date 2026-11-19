@@ -53,6 +53,7 @@ original `.dom.mln` source.
 
 ## Follow-up work
 
-- Add focused semantic-value tests for AST construction and epsilon reductions.
+- Add focused semantic-value tests for AST construction (empty reductions are
+  covered by `tests/test_semantic_actions.c`).
 - Add destructor-count tests for syntax failures.
 - Add grammar composition support for core MyLang plus DOM syntax.
