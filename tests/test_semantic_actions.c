@@ -216,7 +216,7 @@ static void *reduce_recording(const SyntaxReduceEvent *event, void *user_data) {
     recorded->rhs_count = event->rhs_count;
     recorded->rhs_is_null = event->rhs == NULL;
     recorded->span = event->span;
-    for (size_t i = 0; i < event->rhs_count; ++i) {
+    for (size_t i = 0; event->rhs && i < event->rhs_count; ++i) {
         if (event->rhs[i].value) {
             free(event->rhs[i].value);
             state->freed++;
