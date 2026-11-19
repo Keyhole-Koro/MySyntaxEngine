@@ -9,7 +9,7 @@ BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 BIN_DIR = $(BUILD_DIR)/bin
 TARGET = $(BIN_DIR)/output
-TESTS = semantic_actions mylang_grammar table_cache grammar_loader lr1_builder
+TESTS = semantic_actions mylang_grammar table_cache grammar_loader lr1_builder annotations
 TEST_BINS = $(patsubst %,$(BIN_DIR)/test_%,$(TESTS))
 OBJ = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(SRC))
 
