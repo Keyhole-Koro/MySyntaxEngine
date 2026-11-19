@@ -5,7 +5,6 @@
 #include <string.h>
 
 #define STATE_BUCKETS 65536
-#define MAX_SUFFIX_FIRST 256
 
 /* What building the table reads over and over, worked out once. A dot item is
    a production with a dot position, and a state is known by its kernel: the
@@ -14,9 +13,12 @@
 typedef struct {
     const SyntaxGrammar *grammar;
     int *item_base;           /* production -> its first dot item */
-    int **suffix_first;       /* dot item -> what follows its next symbol, or NULL
-                                 when that is the item's own lookahead */
+    int **suffix_first;       /* dot item -> the terminals that can start what
+                                 follows its next symbol (NULL when none) */
     int *suffix_first_counts;
+    bool *suffix_nullable;    /* dot item -> whether what follows its next symbol
+                                 can be empty, letting the item's own lookahead
+                                 follow too */
     int **productions_of;     /* nonterminal -> its productions, in order */
     int *production_counts;
     int *seen;                /* (dot item, lookahead) -> last closure holding it */
@@ -27,39 +29,51 @@ typedef struct {
     int kernel_cap;
 } Builder;
 
-static void add_first_symbol(const SyntaxGrammar *grammar, bool **first, int nonterminal, int terminal) {
-    (void)grammar;
-    first[nonterminal][terminal] = true;
+/* Add FIRST(`symbol`) to `into`; true if that added anything. */
+static bool add_first_of(const SyntaxGrammar *grammar, bool **first, bool *into, int symbol) {
+    if (lr1_symbol_is_terminal(grammar, symbol)) {
+        if (into[symbol]) return false;
+        into[symbol] = true;
+        return true;
+    }
+    bool added = false;
+    for (int t = 0; t < grammar->symbol_count; t++) {
+        if (!first[symbol][t] || into[t]) continue;
+        into[t] = true;
+        added = true;
+    }
+    return added;
 }
 
-static bool **compute_first_sets(const SyntaxGrammar *grammar) {
+/* FIRST of every nonterminal: the terminals its derivations can start with.
+   A right-hand side contributes past its leading nullable nonterminals, and a
+   nonterminal is nullable when one of its right-hand sides is all nullable. */
+static bool **compute_first_sets(const SyntaxGrammar *grammar, bool **out_nullable) {
     bool **first = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(bool *));
     for (int i = 0; i < grammar->symbol_count; i++) {
         first[i] = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(bool));
     }
+    bool *nullable = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(bool));
 
     bool changed;
     do {
         changed = false;
         for (int i = 0; i < grammar->production_count; i++) {
             const Production *production = &grammar->productions[i];
-            if (production->rhs_len == 0) continue;
-            int first_sym = production->rhs[0];
-            if (lr1_symbol_is_terminal(grammar, first_sym)) {
-                if (!first[production->lhs][first_sym]) {
-                    add_first_symbol(grammar, first, production->lhs, first_sym);
-                    changed = true;
-                }
-            } else {
-                for (int t = 0; t < grammar->symbol_count; t++) {
-                    if (!first[first_sym][t] || first[production->lhs][t]) continue;
-                    first[production->lhs][t] = true;
-                    changed = true;
-                }
+            bool all_nullable = true;
+            for (int j = 0; j < production->rhs_len && all_nullable; j++) {
+                int symbol = production->rhs[j];
+                if (add_first_of(grammar, first, first[production->lhs], symbol)) changed = true;
+                all_nullable = !lr1_symbol_is_terminal(grammar, symbol) && nullable[symbol];
+            }
+            if (all_nullable && !nullable[production->lhs]) {
+                nullable[production->lhs] = true;
+                changed = true;
             }
         }
     } while (changed);
 
+    *out_nullable = nullable;
     return first;
 }
 
@@ -90,27 +104,39 @@ static bool mark_seen(Builder *builder, LR1Item item) {
     return true;
 }
 
-static void set_suffix_first(Builder *builder, bool **first, int id,
-                             const Production *production, int dot) {
+/* FIRST of what follows the dot item's next symbol, in terminal order, and
+   whether all of it can be empty. `in_suffix` is symbol_count scratch flags. */
+static void set_suffix_first(Builder *builder, bool **first, const bool *nullable, bool *in_suffix,
+                             int id, const Production *production, int dot) {
     const SyntaxGrammar *grammar = builder->grammar;
-    int after = dot + 1;
-    if (after >= production->rhs_len) return;
+    memset(in_suffix, 0, (size_t)grammar->symbol_count * sizeof(bool));
 
-    int symbol = production->rhs[after];
-    int *terminals = lr1_xcalloc(MAX_SUFFIX_FIRST, sizeof(int));
+    bool suffix_nullable = true;
+    for (int j = dot + 1; j < production->rhs_len && suffix_nullable; j++) {
+        int symbol = production->rhs[j];
+        add_first_of(grammar, first, in_suffix, symbol);
+        suffix_nullable = !lr1_symbol_is_terminal(grammar, symbol) && nullable[symbol];
+    }
+
     int count = 0;
-    if (lr1_symbol_is_terminal(grammar, symbol)) {
-        terminals[count++] = symbol;
-    } else {
-        for (int t = 0; t < grammar->symbol_count && count < MAX_SUFFIX_FIRST; t++) {
-            if (first[symbol][t]) terminals[count++] = t;
+    for (int t = 0; t < grammar->symbol_count; t++) {
+        if (in_suffix[t]) count++;
+    }
+    int *terminals = NULL;
+    if (count > 0) {
+        terminals = lr1_xcalloc((size_t)count, sizeof(int));
+        count = 0;
+        for (int t = 0; t < grammar->symbol_count; t++) {
+            if (in_suffix[t]) terminals[count++] = t;
         }
     }
     builder->suffix_first[id] = terminals;
     builder->suffix_first_counts[id] = count;
+    builder->suffix_nullable[id] = suffix_nullable;
 }
 
-static void builder_init(Builder *builder, const SyntaxGrammar *grammar, bool **first) {
+static void builder_init(Builder *builder, const SyntaxGrammar *grammar, bool **first,
+                         const bool *nullable) {
     memset(builder, 0, sizeof(*builder));
     builder->grammar = grammar;
 
@@ -123,12 +149,16 @@ static void builder_init(Builder *builder, const SyntaxGrammar *grammar, bool **
 
     builder->suffix_first = lr1_xcalloc((size_t)item_count, sizeof(int *));
     builder->suffix_first_counts = lr1_xcalloc((size_t)item_count, sizeof(int));
+    builder->suffix_nullable = lr1_xcalloc((size_t)item_count, sizeof(bool));
+    bool *in_suffix = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(bool));
     for (int p = 0; p < grammar->production_count; p++) {
         const Production *production = &grammar->productions[p];
         for (int dot = 0; dot < production->rhs_len; dot++) {
-            set_suffix_first(builder, first, builder->item_base[p] + dot, production, dot);
+            set_suffix_first(builder, first, nullable, in_suffix, builder->item_base[p] + dot,
+                             production, dot);
         }
     }
+    free(in_suffix);
 
     builder->productions_of = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(int *));
     builder->production_counts = lr1_xcalloc((size_t)grammar->symbol_count, sizeof(int));
@@ -161,6 +191,7 @@ static void builder_free(Builder *builder, int state_count) {
     free(builder->item_base);
     free(builder->suffix_first);
     free(builder->suffix_first_counts);
+    free(builder->suffix_nullable);
     free(builder->productions_of);
     free(builder->production_counts);
     free(builder->seen);
@@ -183,17 +214,21 @@ static void closure(Builder *builder, ItemSet *set) {
         int next_symbol = production->rhs[item.dot];
         if (lr1_symbol_is_terminal(grammar, next_symbol)) continue;
 
+        /* The new items' lookaheads: FIRST of what follows next_symbol, and
+           the item's own lookahead when all of that can be empty. */
         int id = item_id(builder, item);
         const int *lookaheads = builder->suffix_first[id];
         int lookahead_count = builder->suffix_first_counts[id];
-        if (!lookaheads) {
-            lookaheads = &item.lookahead;
-            lookahead_count = 1;
-        }
+        bool own_lookahead = builder->suffix_nullable[id];
 
         for (int p = 0; p < builder->production_counts[next_symbol]; p++) {
+            int production = builder->productions_of[next_symbol][p];
             for (int l = 0; l < lookahead_count; l++) {
-                LR1Item next = {builder->productions_of[next_symbol][p], 0, lookaheads[l]};
+                LR1Item next = {production, 0, lookaheads[l]};
+                if (mark_seen(builder, next)) itemset_push(set, next);
+            }
+            if (own_lookahead) {
+                LR1Item next = {production, 0, item.lookahead};
                 if (mark_seen(builder, next)) itemset_push(set, next);
             }
         }
@@ -351,15 +386,17 @@ static void add_transitions(Builder *builder, SyntaxTable *table, int state,
 }
 
 SyntaxTable *syntax_build_lr1_table(SyntaxGrammar *grammar) {
-    bool **first = compute_first_sets(grammar);
+    bool *nullable = NULL;
+    bool **first = compute_first_sets(grammar, &nullable);
     SyntaxTable *table = lr1_xcalloc(1, sizeof(SyntaxTable));
     table->grammar = grammar;
 
     ensure_table_rows(table, 1);
 
     Builder builder;
-    builder_init(&builder, grammar, first);
+    builder_init(&builder, grammar, first, nullable);
     free_first_sets(first, grammar->symbol_count);
+    free(nullable);
 
     LR1Item start_item = {0, 0, grammar->eof_symbol};
     state_for_kernel(&builder, table, &start_item, 1);
