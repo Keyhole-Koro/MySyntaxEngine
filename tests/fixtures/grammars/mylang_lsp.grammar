@@ -276,8 +276,10 @@ functionType: 'FN' 'L_PARENTHESES' 'R_PARENTHESES' 'MEMBER' type
 functionTypeParams: functionTypeParams 'COMMA' functionTypeParam
                   | functionTypeParam
 
+// `fn(i32, rest) -> void`: a variadic function's type ends in a bare `rest`.
 functionTypeParam: type
                  | type declarator@parameter
+                 | 'REST'
 
 typePrefix  : 'CONST'
             | 'BORROW'
