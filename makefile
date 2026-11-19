@@ -9,8 +9,8 @@ BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 BIN_DIR = $(BUILD_DIR)/bin
 TARGET = $(BIN_DIR)/output
-SEMANTIC_ACTION_TEST = $(BIN_DIR)/test_semantic_actions
-MYLANG_GRAMMAR_TEST = $(BIN_DIR)/test_mylang_grammar
+TESTS = semantic_actions mylang_grammar
+TEST_BINS = $(patsubst %,$(BIN_DIR)/test_%,$(TESTS))
 OBJ = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(SRC))
 
 all: $(TARGET)
@@ -23,17 +23,13 @@ $(OBJ_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@
 
-$(SEMANTIC_ACTION_TEST): $(LIB_SRC) tests/test_semantic_actions.c
+# Each tests/test_<name>.c links against the library sources on its own.
+$(BIN_DIR)/test_%: $(LIB_SRC) tests/test_%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
 
-$(MYLANG_GRAMMAR_TEST): $(LIB_SRC) tests/test_mylang_grammar.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $^
-
-test: $(SEMANTIC_ACTION_TEST) $(MYLANG_GRAMMAR_TEST)
-	./$(SEMANTIC_ACTION_TEST)
-	./$(MYLANG_GRAMMAR_TEST)
+test: $(TEST_BINS)
+	@set -e; for test in $(TEST_BINS); do ./$$test; done
 
 clean:
 	rm -rf $(BUILD_DIR)
