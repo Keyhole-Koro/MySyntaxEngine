@@ -1,0 +1,10 @@
+// X starts with A, which can be empty, so FIRST(X) holds 'b' as well as
+// 'a', and Y reduces on either.
+S : Y X 'c' $
+
+Y : 'y'
+
+X : A 'b'
+
+A : 'a'
+  |

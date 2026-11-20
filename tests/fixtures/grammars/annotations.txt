@@ -1,0 +1,20 @@
+// The annotations the language server reads. @role tags the first token of a
+// symbol, and with the single modifier only a symbol of one token. @decl(kind)
+// records an outline symbol unless it reduces inside a %scope.
+%scope LB RB
+
+program : items $
+
+items   : items item
+        | item
+
+item    : 'FN' 'ID'@function@decl(function) block
+        | 'VAR' 'ID'@variable@decl(variable) 'SEMI'
+        | expr 'SEMI'
+
+block   : 'LB' items 'RB'
+        | 'LB' 'RB'
+
+expr    : expr@function:single 'LP' 'RP'
+        | expr 'DOT' 'ID'@property
+        | 'ID'@variable

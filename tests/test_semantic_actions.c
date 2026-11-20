@@ -192,6 +192,184 @@ static void test_non_terminal_ids_are_rejected(SyntaxGrammar *grammar, SyntaxTab
     }
 }
 
+/* Records each reduction and owns values the way an AST builder would: it
+   frees the right-hand side's values and returns a new one for the left. */
+typedef struct {
+    size_t rhs_count;
+    bool rhs_is_null;
+    SyntaxSourceSpan span;
+} RecordedReduce;
+
+typedef struct {
+    RecordedReduce reduces[8];
+    int reduce_count;
+    int allocated;
+    int freed;
+    int destroyed;
+} EmptyState;
+
+static void *reduce_recording(const SyntaxReduceEvent *event, void *user_data) {
+    EmptyState *state = user_data;
+    CHECK(state->reduce_count < (int)(sizeof(state->reduces) / sizeof(state->reduces[0])),
+          "too many reductions");
+    RecordedReduce *recorded = &state->reduces[state->reduce_count++];
+    recorded->rhs_count = event->rhs_count;
+    recorded->rhs_is_null = event->rhs == NULL;
+    recorded->span = event->span;
+    for (size_t i = 0; event->rhs && i < event->rhs_count; ++i) {
+        if (event->rhs[i].value) {
+            free(event->rhs[i].value);
+            state->freed++;
+        }
+    }
+    void *node = malloc(1);
+    CHECK(node != NULL, "node allocation");
+    state->allocated++;
+    return node;
+}
+
+static void destroy_recorded(int symbol_id, void *value, void *user_data) {
+    (void)symbol_id;
+    EmptyState *state = user_data;
+    state->destroyed++;
+    free(value);
+}
+
+static bool same_span(SyntaxSourceSpan a, SyntaxSourceSpan b) {
+    return a.byte_start == b.byte_start && a.byte_end == b.byte_end &&
+        a.line_start == b.line_start && a.column_start == b.column_start &&
+        a.line_end == b.line_end && a.column_end == b.column_end;
+}
+
+static void *token_value(EmptyState *state) {
+    void *value = malloc(1);
+    CHECK(value != NULL, "token value allocation");
+    state->allocated++;
+    return value;
+}
+
+static SyntaxActionResult parse_empty(SyntaxTable *table, SyntaxInputToken *tokens, size_t count,
+                                      EmptyState *state) {
+    SyntaxActionSet actions = {
+        .reduce = reduce_recording,
+        .destroy = destroy_recorded,
+        .user_data = state,
+    };
+    return syntax_parse_with_actions(table, tokens, count, &actions);
+}
+
+static void test_empty_reduction_at_lookahead(SyntaxGrammar *grammar, SyntaxTable *table) {
+    puts("test: empty reduction spans zero width at the lookahead");
+    fflush(stdout);
+    EmptyState state = {0};
+    SyntaxInputToken tokens[] = {
+        {.terminal_id = syntax_terminal_id(grammar, "num"), .lexeme = "42", .lexeme_length = 2,
+         .span = span(3, 5, 2, 4, 2, 6), .value = token_value(&state)},
+    };
+
+    SyntaxActionResult result = parse_empty(table, tokens, 1, &state);
+    CHECK(result.syntax.status == SYNTAX_OK, "num alone must parse");
+    CHECK(state.reduce_count >= 3, "head, tail and program must reduce");
+
+    /* head -> <empty>, before num is shifted. */
+    CHECK(state.reduces[0].rhs_count == 0, "head is empty");
+    CHECK(state.reduces[0].rhs_is_null, "an empty reduction has no rhs array");
+    CHECK(same_span(state.reduces[0].span, span(3, 3, 2, 4, 2, 4)), "empty head sits at num's start");
+    /* tail -> num */
+    CHECK(state.reduces[1].rhs_count == 1, "tail holds num");
+    CHECK(same_span(state.reduces[1].span, span(3, 5, 2, 4, 2, 6)), "tail spans num");
+    /* program -> head tail $, from the empty head to the end of input. */
+    CHECK(state.reduces[2].rhs_count == 3, "program holds head, tail and $");
+    CHECK(same_span(state.reduces[2].span, span(3, 5, 2, 4, 2, 6)), "program starts at the empty head");
+    CHECK(same_span(result.root_span, span(3, 5, 2, 4, 2, 6)), "root span");
+
+    CHECK(result.root != NULL, "the root is the program node");
+    free(result.root);
+    state.freed++;
+    CHECK(state.destroyed == 0, "a successful parse destroys nothing");
+    CHECK(state.allocated == state.freed, "every value is freed exactly once");
+    syntax_action_result_free(&result);
+}
+
+static void test_empty_reduction_at_end_of_input(SyntaxGrammar *grammar, SyntaxTable *table) {
+    puts("test: empty reduction at the end of input");
+    fflush(stdout);
+    EmptyState state = {0};
+    SyntaxInputToken tokens[] = {
+        {.terminal_id = syntax_terminal_id(grammar, "id"), .lexeme = "x", .lexeme_length = 1,
+         .span = span(0, 1, 1, 1, 1, 2), .value = token_value(&state)},
+    };
+
+    SyntaxActionResult result = parse_empty(table, tokens, 1, &state);
+    CHECK(result.syntax.status == SYNTAX_OK, "id alone must parse");
+    CHECK(state.reduce_count >= 3, "head, tail and program must reduce");
+    CHECK(state.reduces[0].rhs_count == 1, "head holds id");
+    /* tail -> <empty> at the end of input: zero width where id ends. */
+    CHECK(state.reduces[1].rhs_count == 0 && state.reduces[1].rhs_is_null, "tail is empty");
+    CHECK(same_span(state.reduces[1].span, span(1, 1, 1, 2, 1, 2)), "empty tail sits after the last token");
+    CHECK(same_span(result.root_span, span(0, 1, 1, 1, 1, 2)), "root spans id");
+
+    free(result.root);
+    state.freed++;
+    CHECK(state.allocated == state.freed && state.destroyed == 0, "every value is freed exactly once");
+    syntax_action_result_free(&result);
+
+    /* With no tokens at all, every span is the empty span at the start. */
+    EmptyState none = {0};
+    result = parse_empty(table, NULL, 0, &none);
+    CHECK(result.syntax.status == SYNTAX_OK, "empty input must parse");
+    CHECK(none.reduce_count >= 3, "head, tail and program must reduce");
+    CHECK(none.reduces[0].rhs_count == 0 && none.reduces[1].rhs_count == 0, "both are empty");
+    for (int i = 0; i < 3; ++i) {
+        CHECK(same_span(none.reduces[i].span, span(0, 0, 0, 0, 0, 0)), "empty input spans are zero");
+    }
+    free(result.root);
+    none.freed++;
+    CHECK(none.allocated == none.freed && none.destroyed == 0, "empty input frees every node once");
+    syntax_action_result_free(&result);
+}
+
+static void test_error_destroys_empty_reduction_value(SyntaxGrammar *grammar, SyntaxTable *table) {
+    puts("test: error destroys the value of an empty reduction");
+    fflush(stdout);
+    EmptyState state = {0};
+    SyntaxInputToken tokens[] = {
+        {.terminal_id = syntax_terminal_id(grammar, "num"), .lexeme = "42", .lexeme_length = 2,
+         .span = span(0, 2, 1, 1, 1, 3), .value = token_value(&state)},
+        {.terminal_id = syntax_terminal_id(grammar, "id"), .lexeme = "x", .lexeme_length = 1,
+         .span = span(3, 4, 1, 4, 1, 5), .value = token_value(&state)},
+    };
+
+    SyntaxActionResult result = parse_empty(table, tokens, 2, &state);
+    CHECK(result.syntax.status == SYNTAX_ERROR, "id after num must fail");
+    CHECK(result.syntax.token_index == 1, "the error is at id");
+    CHECK(result.root == NULL, "a failed parse has no root");
+    /* The empty head's node and num are still on the stack; id was never
+       shifted, so it stays the caller's. */
+    CHECK(state.reduce_count == 1 && state.reduces[0].rhs_count == 0, "only the empty head reduced");
+    CHECK(state.destroyed == 2, "head's node and num are destroyed");
+    free(tokens[1].value);
+    state.freed++;
+    CHECK(state.allocated == state.freed + state.destroyed, "every value is freed exactly once");
+    syntax_action_result_free(&result);
+}
+
+static void test_empty_reductions(void) {
+    SyntaxGrammar *grammar = syntax_load_grammar("tests/fixtures/grammars/semantic_actions_empty.txt");
+    CHECK(grammar != NULL, "empty-rule grammar must load");
+    SyntaxTable *table = syntax_build_lr1_table(grammar);
+    CHECK(syntax_table_conflict_count(table) == 0, "empty-rule grammar must be conflict free");
+    CHECK(syntax_terminal_id(grammar, "id") >= 0 && syntax_terminal_id(grammar, "num") >= 0,
+          "fixture terminals must exist");
+
+    test_empty_reduction_at_lookahead(grammar, table);
+    test_empty_reduction_at_end_of_input(grammar, table);
+    test_error_destroys_empty_reduction_value(grammar, table);
+
+    syntax_free_table(table);
+    syntax_free_grammar(grammar);
+}
+
 int main(void) {
     const char *fixture = "tests/fixtures/grammars/semantic_actions.txt";
     SyntaxGrammar *grammar = syntax_load_grammar(fixture);
@@ -207,6 +385,8 @@ int main(void) {
 
     syntax_free_table(table);
     syntax_free_grammar(grammar);
+
+    test_empty_reductions();
     puts("semantic action tests passed");
     return 0;
 }
