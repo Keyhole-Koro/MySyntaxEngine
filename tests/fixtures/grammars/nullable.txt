@@ -1,0 +1,9 @@
+// Both nonterminals between 'x' and 'z' can be empty, so 'z' can follow
+// 'x' directly and must be among the lookaheads that reduce A and B.
+S : 'x' A B 'z' $
+
+A : 'a'
+  |
+
+B : 'b'
+  |
